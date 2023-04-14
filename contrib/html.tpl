@@ -137,6 +137,28 @@
       </tr>
         {{- end }}
       {{- end }}
+      {{- if (eq (len .Secrets ) 0) }}
+      <tr><th colspan="6">No Secrets found</th></tr>
+      {{- else }}
+      <tr class="sub-header">
+        <th>Category</th>
+        <th>Rule ID</th>
+        <th>Check</th>
+        <th>Severity</th>
+        <th>Match</th>
+      </tr>
+        {{- range .Secrets }}
+      <tr class="severity-{{ escapeXML .Severity }}">
+        <td class="secrets-category">{{ .Category }}</td>
+        <td>{{ escapeXML .RuleID }}</td>
+        <td class="secrets-check">{{ escapeXML .Title }}</td>
+        <td class="severity">{{ escapeXML .Severity }}</td>
+        <td style="overflow-wrap: anywhere; white-space:normal;">
+          {{ escapeXML .Match }}
+        </td>
+      </tr>
+        {{- end }}
+      {{- end }}
     {{- end }}
     </table>
 {{- else }}

@@ -113,7 +113,7 @@
         <td class="pkg-path">{{ escapeXML .PkgPath }}</td>
         <td class="links" data-more-links="off">
           {{- range .Vulnerability.References }}
-          <a href={{ escapeXML . | printf "%q" }}>{{ escapeXML . }}</a>
+          <a href={{ escapeXML . | printf "%q" }}>{{ abbrev 50 . | escapeXML }}</a>
           {{- end }}
         </td>
       </tr>

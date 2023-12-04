@@ -2,7 +2,7 @@
 <testsuites name="trivy">
 {{- range . -}}
 {{- $failures := len .Vulnerabilities }}
-    <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{  .Target }}" errors="0" skipped="0" time="">
+    <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{ .Target }}" errors="0" skipped="0" time="">
     {{- if not (eq .Type "") }}
         <properties>
             <property name="type" value="{{ .Type }}"></property>
@@ -19,7 +19,7 @@
     {{- end }}
     </testsuite>
 {{- $failures := len .Misconfigurations }}
-    <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{  .Target }}" errors="0" skipped="0" time="">
+    <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{ .Target }}" errors="0" skipped="0" time="">
     {{- if not (eq .Type "") }}
         <properties>
             <property name="type" value="{{ .Type }}"></property>
@@ -32,7 +32,7 @@
     {{- end }}
     </testsuite>
 {{- $failures := len .Secrets }}
-    <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{  .Target }}" errors="0" skipped="0" time="">
+    <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{ .Target }}" errors="0" skipped="0" time="">
     {{- if not (eq .Type "") }}
         <properties>
             <property name="type" value="{{ .Type }}"></property>
@@ -46,7 +46,7 @@
     {{- end }}
     </testsuite>
 {{- $failures := len .Licenses }}
-    <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{  .Target }}" errors="0" skipped="0" time="">
+    <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{ .Target }}" errors="0" skipped="0" time="">
         {{ $Path := .Target }}
         {{ range .Licenses }}
         <testcase file="{{ escapeXML $Path }}" classname="{{ .Category }}" name="[{{ .Severity }}] {{ .Name }} {{ .PkgName }} {{ .FilePath }}" time="">

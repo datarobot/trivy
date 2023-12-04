@@ -2,7 +2,7 @@
 <testsuites name="trivy">
 {{- range . -}}
 {{- $failures := len .Vulnerabilities }}
-    <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{ .Target }}" errors="0" skipped="0" time="">
+    <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{  .Target }}" errors="0" skipped="0" time="">
     {{- if not (eq .Type "") }}
         <properties>
             <property name="type" value="{{ .Type }}"></property>
@@ -57,6 +57,22 @@
         {{ range .Secrets }}
         <testcase file="{{ escapeXML $Path }}" classname="{{ .Category }}" name="[{{ .Severity }}] {{ .RuleID }}" time="">
             <failure message="{{ escapeXML .Title }}" type="description">{{ escapeXML .Match }}</failure>
+        </testcase>
+    {{- end }}
+    </testsuite>
+{{- $failures := len .Licenses }}
+    <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{  .Target }}" errors="0" skipped="0" time="">
+        {{ $Path := .Target }}
+        {{ range .Licenses }}
+        <testcase file="{{ escapeXML $Path }}" classname="{{ .Category }}" name="[{{ .Severity }}] {{ .Name }} {{ .PkgName }} {{ .FilePath }}" time="">
+            <failure message="{{ .Name }} {{ .PkgName }}" type="description">
+              Severity: {{ .Severity }}
+              License: {{ .Name }}
+              Package Name (if available): {{ .PkgName }}
+              File Path (if available): {{ .FilePath }}
+              Confidence: {{ .Confidence }}
+              Link: {{ escapeXML .Link }}
+            </failure>
         </testcase>
     {{- end }}
     </testsuite>

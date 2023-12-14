@@ -582,6 +582,33 @@ func TestFilter(t *testing.T) {
 								misconf2,
 								misconf3, // ignored by policy
 							},
+							Secrets: []ftypes.SecretFinding{
+							    {
+                                    RuleID:    "generic-wanted-rule",
+                                    Severity:  dbTypes.SeverityHigh.String(),
+                                    Title:     "Secret that should pass filter on rule id",
+                                    StartLine: 1,
+                                    EndLine:   2,
+                                    Match:     "*****",
+							    },
+							    {
+									RuleID:    "generic-critical-rule",
+									Severity:  dbTypes.SeverityHigh.String(),
+									Title:     "Critical Secret shouldn't pass filter",
+									StartLine: 1,
+									EndLine:   2,
+									Match:     "*****",
+								},
+							},
+							Licenses: []types.DetectedLicense{
+                                {
+                                    Name:       "GPL-3.0",
+                                    Severity:   dbTypes.SeverityHigh.String(),
+                                    FilePath:   "usr/share/gcc/python/libstdcxx/v6/printers.py",
+                                    Category:   "restricted",
+                                    Confidence: 1,
+                                },
+						    },
 						},
 					},
 				},
@@ -610,6 +637,16 @@ func TestFilter(t *testing.T) {
 								Source:    "testdata/ignore-misconf.rego",
 								Finding:   misconf3,
 							},
+						},
+						Secrets: []ftypes.SecretFinding{
+						    {
+                                RuleID:    "generic-critical-rule",
+                                Severity:  dbTypes.SeverityHigh.String(),
+                                Title:     "Critical Secret shouldn't pass filter",
+                                StartLine: 1,
+                                EndLine:   2,
+                                Match:     "*****",
+                            },
 						},
 					},
 				},

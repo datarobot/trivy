@@ -86,5 +86,5 @@ docker_manifests:
     - 'datarobotdev/trivy:{{ .Version }}-arm64'
   - name_template: 'datarobotdev/trivy:latest'
     image_templates:
-    - 'aquasec/trivy:{{ .Version }}-amd64'
-    - 'aquasec/trivy:{{ .Version }}-arm64'
+    - 'datarobotdev/trivy:{{ .Version }}-amd64'
+    - 'datarobotdev/trivy:{{ .Version }}-arm64'

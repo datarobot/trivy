@@ -55,8 +55,8 @@
     <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{ .Target }}" errors="0" skipped="0" time="">
         {{ $Path := .Target }}
         {{ range .Licenses }}
-        <testcase file="{{ escapeXML $Path }}" classname="{{ .Category }}" name="[{{ .Severity }}] License {{ .Name }} {{ .PkgName }} {{ .FilePath }}" time="">
-            <failure message="{{ .Name }} {{ .PkgName }}" type="description">
+        <testcase file="{{ escapeXML $Path }}" classname="{{ .Category }}" name="[{{ .Severity }}] License {{ escapeXML .Name }} {{ escapeXML .PkgName }} {{ escapeXML .FilePath }}" time="">
+            <failure message="{{ escapeXML .Name }} {{ escapeXML .PkgName }}" type="description">
               Severity: {{ .Severity }}
               License: {{ .Name }}
               Package Name (if available): {{ .PkgName }}

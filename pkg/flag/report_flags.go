@@ -66,7 +66,7 @@ var (
 		Name:       "ignore-policy",
 		ConfigName: "ignore-policy",
 		Default:    "",
-		Usage:      "specify the Rego file path to evaluate each vulnerability",
+		Usage:      "specify the Rego file path (or dir path with Rego files) to evaluate each vulnerability",
 	}
 	ExitCodeFlag = Flag{
 		Name:       "exit-code",

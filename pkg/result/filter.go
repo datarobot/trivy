@@ -3,9 +3,12 @@ package result
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"sort"
 
+	"github.com/open-policy-agent/opa/bundle"
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/samber/lo"
 	"golang.org/x/exp/maps"
@@ -69,11 +72,29 @@ func FilterResult(ctx context.Context, result *types.Result, ignoreConf IgnoreCo
 	if opt.PolicyFile != "" {
 		var err error
 		var ignored int
-		filteredVulns, filteredMisconfs, ignored, filteredSecrets, filteredLicenses, err = applyPolicy(ctx, filteredVulns, filteredMisconfs, filteredSecrets, filteredLicenses, opt.PolicyFile)
+
+		// If the PolicyFile option is a dir find and apply rego files in it
+		var policyFiles []string
+		fi, err := os.Stat(opt.PolicyFile)
 		if err != nil {
-			return xerrors.Errorf("failed to apply the policy: %w", err)
+			return xerrors.Errorf("file %q stat error: %w", opt.PolicyFile, err)
 		}
-		ignoredMisconfs += ignored
+		if fi.IsDir() {
+			policyFiles, err = findPolicyFiles(opt.PolicyFile)
+			if err != nil {
+				return xerrors.Errorf("failed to find policy files: %w", err)
+			}
+		} else {
+			policyFiles = append(policyFiles, opt.PolicyFile)
+		}
+
+		for _, policyFile := range policyFiles {
+			filteredVulns, filteredMisconfs, ignored, filteredSecrets, filteredLicenses, err = applyPolicy(ctx, filteredVulns, filteredMisconfs, filteredSecrets, filteredLicenses, policyFile)
+			if err != nil {
+				return xerrors.Errorf("failed to apply the policy %s: %w", policyFile, err)
+			}
+			ignoredMisconfs += ignored
+		}
 	}
 	sort.Sort(types.BySeverity(filteredVulns))
 
@@ -221,6 +242,24 @@ func summarize(status types.MisconfStatus, summary *types.MisconfSummary) {
 	case types.StatusException:
 		summary.Exceptions++
 	}
+}
+
+func findPolicyFiles(policiesDir string) ([]string, error) {
+	var files []string
+	err := filepath.WalkDir(policiesDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && filepath.Ext(path) == bundle.RegoExt {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return files, xerrors.Errorf("walk error %w", err)
+	}
+
+	return files, nil
 }
 
 func applyPolicy(ctx context.Context, vulns []types.DetectedVulnerability, misconfs []types.DetectedMisconfiguration, scrts []ftypes.SecretFinding, lics []types.DetectedLicense,

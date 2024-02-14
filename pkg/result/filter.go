@@ -3,6 +3,7 @@ package result
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -70,9 +71,26 @@ func FilterResult(ctx context.Context, result *types.Result, ignoreConf IgnoreCo
 	filterLicenses(result, severities, opt.IgnoreLicenses, ignoreConf)
 
 	if opt.PolicyFile != "" {
-		policyFile := filepath.ToSlash(filepath.Clean(opt.PolicyFile))
-		if err := applyPolicy(ctx, result, policyFile); err != nil {
-			return xerrors.Errorf("failed to apply the policy: %w", err)
+		// If the PolicyFile option is a dir find and apply rego files in it
+		var policyFiles []string
+		fi, err := os.Stat(opt.PolicyFile)
+		if err != nil {
+			return xerrors.Errorf("file %q stat error: %w", opt.PolicyFile, err)
+		}
+		if fi.IsDir() {
+			policyFiles, err = findPolicyFiles(opt.PolicyFile)
+			if err != nil {
+				return xerrors.Errorf("failed to find policy files: %w", err)
+			}
+		} else {
+			policyFiles = append(policyFiles, opt.PolicyFile)
+		}
+
+		for _, policyFile := range policyFiles {
+			policyFile := filepath.ToSlash(filepath.Clean(policyFile))
+			if err := applyPolicy(ctx, result, policyFile); err != nil {
+				return xerrors.Errorf("failed to apply the policy: %w", err)
+			}
 		}
 	}
 	sort.Sort(types.BySeverity(result.Vulnerabilities))
@@ -215,6 +233,24 @@ func updateMisconfSummary(status types.MisconfStatus, summary *types.MisconfSumm
 	case types.MisconfStatusPassed:
 		summary.Successes++
 	}
+}
+
+func findPolicyFiles(policiesDir string) ([]string, error) {
+	var files []string
+	err := filepath.WalkDir(policiesDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && filepath.Ext(path) == bundle.RegoExt {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return files, xerrors.Errorf("walk error %w", err)
+	}
+
+	return files, nil
 }
 
 func applyPolicy(ctx context.Context, result *types.Result, policyFile string) error {

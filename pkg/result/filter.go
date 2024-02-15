@@ -92,10 +92,10 @@ func FilterResult(ctx context.Context, result *types.Result, ignoreConf IgnoreCo
 		}
 
 		for _, policyFile := range policyFiles {
-            log.Logger.Debugf("Applying ignore policy: %s", policyFile)
+			log.Logger.Debugf("Applying ignore policy: %s", policyFile)
 			if err := applyPolicy(ctx, result, opt.PolicyFile); err != nil {
-			    return xerrors.Errorf("failed to apply ignore policy %s: %w", policyFile, err)
-		    }
+				return xerrors.Errorf("failed to apply ignore policy %s: %w", policyFile, err)
+			}
 		}
 	}
 	sort.Sort(types.BySeverity(result.Vulnerabilities))

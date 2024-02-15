@@ -65,12 +65,7 @@ var (
 	IgnorePolicyFlag = Flag[string]{
 		Name:       "ignore-policy",
 		ConfigName: "ignore-policy",
-<<<<<<< HEAD
-		Usage:      "specify the Rego file path to evaluate each vulnerability",
-=======
-		Default:    "",
 		Usage:      "specify the Rego file path (or dir path with Rego files) to evaluate each vulnerability",
->>>>>>> e5b8598a6 (Ignore policies from a folder)
 	}
 	ExitCodeFlag = Flag[int]{
 		Name:       "exit-code",

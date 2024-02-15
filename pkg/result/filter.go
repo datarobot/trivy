@@ -16,6 +16,7 @@ import (
 	"golang.org/x/xerrors"
 
 	dbTypes "github.com/aquasecurity/trivy-db/pkg/types"
+	"github.com/aquasecurity/trivy/pkg/log"
 	"github.com/aquasecurity/trivy/pkg/sbom/core"
 	sbomio "github.com/aquasecurity/trivy/pkg/sbom/io"
 	"github.com/aquasecurity/trivy/pkg/types"
@@ -70,7 +71,10 @@ func FilterResult(ctx context.Context, result *types.Result, ignoreConf IgnoreCo
 	filterSecrets(result, severities, ignoreConf)
 	filterLicenses(result, severities, opt.IgnoreLicenses, ignoreConf)
 
-	if opt.PolicyFile != "" {
+
+	if opt.PolicyFile != "" && len(result.Vulnerabilities)+len(result.Misconfigurations)+len(result.Secrets)+len(result.Licenses) > 0 {
+		log.Logger.Debugf("Filtering result with ignore policies, type: %s, path: %s", result.Type, result.Target)
+
 		// If the PolicyFile option is a dir find and apply rego files in it
 		var policyFiles []string
 		fi, err := os.Stat(opt.PolicyFile)
@@ -82,11 +86,15 @@ func FilterResult(ctx context.Context, result *types.Result, ignoreConf IgnoreCo
 			if err != nil {
 				return xerrors.Errorf("failed to find policy files in %s: %w", opt.PolicyFile, err)
 			}
+			if len(policyFiles) == 0 {
+				log.Logger.Warnf("No ignore policies found in %s", opt.PolicyFile)
+			}
 		} else {
 			policyFiles = append(policyFiles, opt.PolicyFile)
 		}
 
 		for _, policyFile := range policyFiles {
+            log.Logger.Debugf("Applying ignore policy: %s", policyFile)
 			if err := applyPolicy(ctx, result, opt.PolicyFile); err != nil {
 			    return xerrors.Errorf("failed to apply ignore policy %s: %w", policyFile, err)
 		    }

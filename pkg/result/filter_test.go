@@ -582,7 +582,7 @@ func TestFilter(t *testing.T) {
 								misconf2,
 								misconf3, // ignored by policy
 							},
-							Secrets: []ftypes.SecretFinding{
+							Secrets: []types.DetectedSecret{
 								{
 									RuleID:      "generic-wanted-rule",
 									Severity:    dbTypes.SeverityHigh.String(),
@@ -638,7 +638,7 @@ func TestFilter(t *testing.T) {
 								Finding:   misconf3,
 							},
 						},
-						Secrets: []ftypes.SecretFinding{
+						Secrets: []types.DetectedSecret{
 							{
 								RuleID:      "generic-critical-rule",
 								Severity:    dbTypes.SeverityHigh.String(),

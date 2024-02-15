@@ -608,7 +608,7 @@ func TestFilter(t *testing.T) {
 									Category:    "restricted",
 									Confidence:  1,
 								},
-						    },
+							},
 						},
 					},
 				},

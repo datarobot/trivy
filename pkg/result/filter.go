@@ -77,12 +77,12 @@ func FilterResult(ctx context.Context, result *types.Result, ignoreConf IgnoreCo
 		var policyFiles []string
 		fi, err := os.Stat(opt.PolicyFile)
 		if err != nil {
-			return xerrors.Errorf("file %q stat error: %w", opt.PolicyFile, err)
+			return xerrors.Errorf("failed to analyze ignore policy %s: %w", opt.PolicyFile, err)
 		}
 		if fi.IsDir() {
 			policyFiles, err = findPolicyFiles(opt.PolicyFile)
 			if err != nil {
-				return xerrors.Errorf("failed to find policy files: %w", err)
+				return xerrors.Errorf("failed to find policy files in %s: %w", opt.PolicyFile, err)
 			}
 		} else {
 			policyFiles = append(policyFiles, opt.PolicyFile)
@@ -91,7 +91,7 @@ func FilterResult(ctx context.Context, result *types.Result, ignoreConf IgnoreCo
 		for _, policyFile := range policyFiles {
 			filteredVulns, filteredMisconfs, ignored, filteredSecrets, filteredLicenses, err = applyPolicy(ctx, filteredVulns, filteredMisconfs, filteredSecrets, filteredLicenses, policyFile)
 			if err != nil {
-				return xerrors.Errorf("failed to apply the policy %s: %w", policyFile, err)
+				return xerrors.Errorf("failed to apply ignore policy %s: %w", policyFile, err)
 			}
 			ignoredMisconfs += ignored
 		}

@@ -17,6 +17,7 @@ import (
 
 	dbTypes "github.com/aquasecurity/trivy-db/pkg/types"
 	ftypes "github.com/aquasecurity/trivy/pkg/fanal/types"
+	"github.com/aquasecurity/trivy/pkg/log"
 	"github.com/aquasecurity/trivy/pkg/types"
 	"github.com/aquasecurity/trivy/pkg/vex"
 )
@@ -69,7 +70,8 @@ func FilterResult(ctx context.Context, result *types.Result, ignoreConf IgnoreCo
 	filteredLicenses := filterLicenses(result.Licenses, severities, opt.IgnoreLicenses, ignoreConf.Licenses)
 
 	var ignoredMisconfs int
-	if opt.PolicyFile != "" {
+	if opt.PolicyFile != "" && len(filteredVulns)+len(filteredMisconfs)+len(filteredSecrets)+len(filteredLicenses) > 0 {
+		log.Logger.Debugf("Filtering result with ignore policies, type: %s, path: %s", result.Type, result.Target)
 		var err error
 		var ignored int
 
@@ -84,11 +86,15 @@ func FilterResult(ctx context.Context, result *types.Result, ignoreConf IgnoreCo
 			if err != nil {
 				return xerrors.Errorf("failed to find policy files in %s: %w", opt.PolicyFile, err)
 			}
+			if len(policyFiles) == 0 {
+				log.Logger.Warnf("No ignore policies found in %s", opt.PolicyFile)
+			}
 		} else {
 			policyFiles = append(policyFiles, opt.PolicyFile)
 		}
 
 		for _, policyFile := range policyFiles {
+			log.Logger.Debugf("Applying ignore policy: %s", policyFile)
 			filteredVulns, filteredMisconfs, ignored, filteredSecrets, filteredLicenses, err = applyPolicy(ctx, filteredVulns, filteredMisconfs, filteredSecrets, filteredLicenses, policyFile)
 			if err != nil {
 				return xerrors.Errorf("failed to apply ignore policy %s: %w", policyFile, err)

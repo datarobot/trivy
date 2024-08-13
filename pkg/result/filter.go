@@ -16,8 +16,6 @@ import (
 
 	dbTypes "github.com/aquasecurity/trivy-db/pkg/types"
 	"github.com/aquasecurity/trivy/pkg/log"
-	"github.com/aquasecurity/trivy/pkg/sbom/core"
-	sbomio "github.com/aquasecurity/trivy/pkg/sbom/io"
 	"github.com/aquasecurity/trivy/pkg/types"
 	"github.com/aquasecurity/trivy/pkg/vex"
 )
@@ -75,7 +73,7 @@ func FilterResult(ctx context.Context, result *types.Result, ignoreConf IgnoreCo
 	filterLicenses(result, severities, opt.IgnoreLicenses, ignoreConf)
 
 	if opt.PolicyFile != "" {
-		log.Logger.Debugf("Filtering result with ignore policies, type: %s, path: %s", result.Type, result.Target)
+		log.Debugf("Filtering result with ignore policies, type: %s, path: %s", result.Type, result.Target)
 
 		// Get ignore policy files from the input path (either file or files in dir)
 		policyFiles, err := findPolicyFiles(opt.PolicyFile)
@@ -84,7 +82,7 @@ func FilterResult(ctx context.Context, result *types.Result, ignoreConf IgnoreCo
 		}
 
 		for _, policyFile := range policyFiles {
-			log.Logger.Debugf("Applying ignore policy: %s", policyFile)
+			log.Debugf("Applying ignore policy: %s", policyFile)
 			if err := applyPolicy(ctx, result, policyFile); err != nil {
 				return xerrors.Errorf("failed to apply ignore policy %s: %w", policyFile, err)
 			}
@@ -250,7 +248,7 @@ func findPolicyFiles(policiesPath string) ([]string, error) {
 		}
 
 		if len(files) == 0 {
-			log.Logger.Warnf("No ignore policies found in %q", policiesPath)
+			log.Warnf("No ignore policies found in %q", policiesPath)
 		}
 	} else {
 		files = append(files, policiesPath)

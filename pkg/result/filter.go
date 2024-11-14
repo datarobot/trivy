@@ -3,16 +3,19 @@ package result
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"sort"
 
+	"github.com/open-policy-agent/opa/bundle"
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/samber/lo"
 	"golang.org/x/xerrors"
 
 	dbTypes "github.com/aquasecurity/trivy-db/pkg/types"
+	"github.com/aquasecurity/trivy/pkg/log"
 	"github.com/aquasecurity/trivy/pkg/types"
 	"github.com/aquasecurity/trivy/pkg/vex"
 )
@@ -70,8 +73,19 @@ func FilterResult(ctx context.Context, result *types.Result, ignoreConf IgnoreCo
 	filterLicenses(result, severities, opt.IgnoreLicenses, ignoreConf)
 
 	if opt.PolicyFile != "" {
-		if err := applyPolicy(ctx, result, opt.PolicyFile); err != nil {
-			return xerrors.Errorf("failed to apply the policy: %w", err)
+		log.Debugf("Filtering result with ignore policies, type: %s, path: %s", result.Type, result.Target)
+
+		// Get ignore policy files from the input path (either file or files in dir)
+		policyFiles, err := findPolicyFiles(opt.PolicyFile)
+		if err != nil {
+			return err
+		}
+
+		for _, policyFile := range policyFiles {
+			log.Debugf("Applying ignore policy: %s", policyFile)
+			if err := applyPolicy(ctx, result, policyFile); err != nil {
+				return xerrors.Errorf("failed to apply ignore policy %s: %w", policyFile, err)
+			}
 		}
 	}
 	sort.Sort(types.BySeverity(result.Vulnerabilities))
@@ -210,6 +224,37 @@ func summarize(status types.MisconfStatus, summary *types.MisconfSummary) {
 	case types.MisconfStatusPassed:
 		summary.Successes++
 	}
+}
+
+func findPolicyFiles(policiesPath string) ([]string, error) {
+	var files []string
+	fi, err := os.Stat(policiesPath)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to analyze ignore policy %q: %w", policiesPath, err)
+	}
+	// If the ignore policy option is a dir find and apply rego files in it
+	if fi.IsDir() {
+		err := filepath.WalkDir(policiesPath, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !d.IsDir() && filepath.Ext(path) == bundle.RegoExt {
+				files = append(files, path)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, xerrors.Errorf("failed to find policy files in %q: %w", policiesPath, err)
+		}
+
+		if len(files) == 0 {
+			log.Warnf("No ignore policies found in %q", policiesPath)
+		}
+	} else {
+		files = append(files, policiesPath)
+	}
+
+	return files, nil
 }
 
 func applyPolicy(ctx context.Context, result *types.Result, policyFile string) error {

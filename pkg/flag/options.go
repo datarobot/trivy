@@ -23,6 +23,7 @@ import (
 	"github.com/aquasecurity/trivy/pkg/log"
 	"github.com/aquasecurity/trivy/pkg/plugin"
 	"github.com/aquasecurity/trivy/pkg/result"
+	"github.com/aquasecurity/trivy/pkg/rpc/client"
 	"github.com/aquasecurity/trivy/pkg/types"
 	"github.com/aquasecurity/trivy/pkg/version/app"
 )
@@ -56,14 +57,20 @@ type Flag[T FlagType] struct {
 	// Usage explains how to use the flag.
 	Usage string
 
-	// Persistent represents if the flag is persistent
+	// Persistent represents if the flag is persistent.
 	Persistent bool
 
-	// Deprecated represents if the flag is deprecated
+	// Deprecated represents if the flag is deprecated.
+	// It shows a warning message when the flag is used.
 	Deprecated string
 
-	// Removed represents if the flag is removed and no longer works
+	// Removed represents if the flag is removed and no longer works.
+	// It shows an error message when the flag is used.
 	Removed string
+
+	// Internal represents if the flag is for internal use only.
+	// It is not shown in the usage message.
+	Internal bool
 
 	// Aliases represents aliases
 	Aliases []Alias
@@ -196,8 +203,20 @@ func (f *Flag[T]) GetName() string {
 	return f.Name
 }
 
+func (f *Flag[T]) GetConfigName() string {
+	return f.ConfigName
+}
+
+func (f *Flag[T]) GetDefaultValue() any {
+	return f.Default
+}
+
 func (f *Flag[T]) GetAliases() []Alias {
 	return f.Aliases
+}
+
+func (f *Flag[T]) Hidden() bool {
+	return f.Deprecated != "" || f.Removed != "" || f.Internal
 }
 
 func (f *Flag[T]) Value() (t T) {
@@ -241,7 +260,7 @@ func (f *Flag[T]) Add(cmd *cobra.Command) {
 		flags.Float64P(f.Name, f.Shorthand, v, f.Usage)
 	}
 
-	if f.Deprecated != "" || f.Removed != "" {
+	if f.Hidden() {
 		_ = flags.MarkHidden(f.Name)
 	}
 }
@@ -302,7 +321,10 @@ type FlagGroup interface {
 
 type Flagger interface {
 	GetName() string
+	GetConfigName() string
+	GetDefaultValue() any
 	GetAliases() []Alias
+	Hidden() bool
 
 	Parse() error
 	Add(cmd *cobra.Command)
@@ -326,7 +348,6 @@ type Flags struct {
 	RegoFlagGroup          *RegoFlagGroup
 	RepoFlagGroup          *RepoFlagGroup
 	ReportFlagGroup        *ReportFlagGroup
-	SBOMFlagGroup          *SBOMFlagGroup
 	ScanFlagGroup          *ScanFlagGroup
 	SecretFlagGroup        *SecretFlagGroup
 	VulnerabilityFlagGroup *VulnerabilityFlagGroup
@@ -350,7 +371,6 @@ type Options struct {
 	RemoteOptions
 	RepoOptions
 	ReportOptions
-	SBOMOptions
 	ScanOptions
 	SecretOptions
 	VulnerabilityOptions
@@ -472,6 +492,16 @@ func (o *Options) RemoteCacheOpts() cache.RemoteOptions {
 		ServerAddr:    o.ServerAddr,
 		CustomHeaders: o.CustomHeaders,
 		Insecure:      o.Insecure,
+		PathPrefix:    o.PathPrefix,
+	}
+}
+
+func (o *Options) ClientScannerOpts() client.ScannerOption {
+	return client.ScannerOption{
+		RemoteURL:     o.ServerAddr,
+		CustomHeaders: o.CustomHeaders,
+		Insecure:      o.Insecure,
+		PathPrefix:    o.PathPrefix,
 	}
 }
 
@@ -548,9 +578,6 @@ func (f *Flags) groups() []FlagGroup {
 	}
 	if f.ImageFlagGroup != nil {
 		groups = append(groups, f.ImageFlagGroup)
-	}
-	if f.SBOMFlagGroup != nil {
-		groups = append(groups, f.SBOMFlagGroup)
 	}
 	if f.VulnerabilityFlagGroup != nil {
 		groups = append(groups, f.VulnerabilityFlagGroup)
@@ -757,13 +784,6 @@ func (f *Flags) ToOptions(args []string) (Options, error) {
 		opts.ReportOptions, err = f.ReportFlagGroup.ToOptions()
 		if err != nil {
 			return Options{}, xerrors.Errorf("report flag error: %w", err)
-		}
-	}
-
-	if f.SBOMFlagGroup != nil {
-		opts.SBOMOptions, err = f.SBOMFlagGroup.ToOptions()
-		if err != nil {
-			return Options{}, xerrors.Errorf("sbom flag error: %w", err)
 		}
 	}
 

@@ -175,9 +175,9 @@ func (r *Rule) MatchKeywords(content []byte) bool {
 	if len(r.Keywords) == 0 {
 		return true
 	}
-
+	var contentLower = bytes.ToLower(content)
 	for _, kw := range r.Keywords {
-		if bytes.Contains(bytes.ToLower(content), []byte(strings.ToLower(kw))) {
+		if bytes.Contains(contentLower, []byte(strings.ToLower(kw))) {
 			return true
 		}
 	}
@@ -366,6 +366,7 @@ func NewScanner(config *Config) Scanner {
 type ScanArgs struct {
 	FilePath string
 	Content  []byte
+	Binary   bool
 }
 
 type Match struct {
@@ -434,9 +435,14 @@ func (s *Scanner) Scan(args ScanArgs) types.Secret {
 			censored = censorLocation(loc, censored)
 		}
 	}
-
 	for _, match := range matched {
-		findings = append(findings, toFinding(match.Rule, match.Location, censored))
+		finding := toFinding(match.Rule, match.Location, censored)
+		// Rewrite unreadable fields for binary files
+		if args.Binary {
+			finding.Match = fmt.Sprintf("Binary file %q matches a rule %q", args.FilePath, match.Rule.Title)
+			finding.Code = types.Code{}
+		}
+		findings = append(findings, finding)
 	}
 
 	if len(findings) == 0 {
@@ -504,8 +510,8 @@ func findLocation(start, end int, content []byte) (int, int, types.Code, string)
 	}
 
 	if lineEnd-lineStart > 100 {
-		lineStart = lo.Ternary(start-30 < 0, 0, start-30)
-		lineEnd = lo.Ternary(end+20 > len(content), len(content), end+20)
+		lineStart = lo.Ternary(start-lineStart-30 < 0, lineStart, start-30)
+		lineEnd = lo.Ternary(end+20 > lineEnd, lineEnd, end+20)
 	}
 	matchLine := string(content[lineStart:lineEnd])
 	endLineNum := startLineNum + bytes.Count(content[start:end], lineSep)

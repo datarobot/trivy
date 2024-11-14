@@ -33,6 +33,7 @@ const (
 	CreatorOrganization    = "aquasecurity"
 	CreatorTool            = "trivy"
 	noneField              = "NONE"
+	noAssertionField       = "NOASSERTION"
 )
 
 const (
@@ -48,6 +49,8 @@ const (
 
 	PackageSupplierNoAssertion  = "NOASSERTION"
 	PackageSupplierOrganization = "Organization"
+
+	PackageAnnotatorToolField = "Tool"
 
 	RelationShipContains  = common.TypeRelationshipContains
 	RelationShipDescribe  = common.TypeRelationshipDescribe
@@ -121,6 +124,9 @@ func (m *Marshaler) Marshal(ctx context.Context, bom *core.BOM) (*spdx.Document,
 		packages      []*spdx.Package
 	)
 
+	// Lock time to use same time for all spdx fields
+	timeNow := clock.Now(ctx).UTC().Format(time.RFC3339)
+
 	root := bom.Root()
 	pkgDownloadLocation := m.packageDownloadLocation(root)
 
@@ -128,7 +134,7 @@ func (m *Marshaler) Marshal(ctx context.Context, bom *core.BOM) (*spdx.Document,
 	packageIDs := make(map[uuid.UUID]spdx.ElementID)
 
 	// Root package contains OS, OS packages, language-specific packages and so on.
-	rootPkg, err := m.rootSPDXPackage(root, pkgDownloadLocation)
+	rootPkg, err := m.rootSPDXPackage(root, timeNow, pkgDownloadLocation)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to generate a root package: %w", err)
 	}
@@ -143,7 +149,7 @@ func (m *Marshaler) Marshal(ctx context.Context, bom *core.BOM) (*spdx.Document,
 		if c.Root {
 			continue
 		}
-		spdxPackage, err := m.spdxPackage(c, pkgDownloadLocation)
+		spdxPackage, err := m.spdxPackage(c, timeNow, pkgDownloadLocation)
 		if err != nil {
 			return nil, xerrors.Errorf("spdx package error: %w", err)
 		}
@@ -215,7 +221,7 @@ func (m *Marshaler) Marshal(ctx context.Context, bom *core.BOM) (*spdx.Document,
 					CreatorType: "Tool",
 				},
 			},
-			Created: clock.Now(ctx).UTC().Format(time.RFC3339),
+			Created: timeNow,
 		},
 		Packages:      packages,
 		Relationships: relationShips,
@@ -236,7 +242,7 @@ func (m *Marshaler) packageDownloadLocation(root *core.Component) string {
 	return location
 }
 
-func (m *Marshaler) rootSPDXPackage(root *core.Component, pkgDownloadLocation string) (*spdx.Package, error) {
+func (m *Marshaler) rootSPDXPackage(root *core.Component, timeNow, pkgDownloadLocation string) (*spdx.Package, error) {
 	var externalReferences []*spdx.PackageExternalReference
 	// When the target is a container image, add PURL to the external references of the root package.
 	if root.PkgIdentifier.PURL != nil {
@@ -257,17 +263,25 @@ func (m *Marshaler) rootSPDXPackage(root *core.Component, pkgDownloadLocation st
 		PackageName:               root.Name,
 		PackageSPDXIdentifier:     elementID(camelCase(string(root.Type)), pkgID),
 		PackageDownloadLocation:   pkgDownloadLocation,
-		PackageAttributionTexts:   m.spdxAttributionTexts(root),
+		Annotations:               m.spdxAnnotations(root, timeNow),
 		PackageExternalReferences: externalReferences,
 		PrimaryPackagePurpose:     pkgPurpose,
 	}, nil
 }
 
-func (m *Marshaler) appendAttributionText(attributionTexts []string, key, value string) []string {
+func (m *Marshaler) appendAnnotation(annotations []spdx.Annotation, timeNow, key, value string) []spdx.Annotation {
 	if value == "" {
-		return attributionTexts
+		return annotations
 	}
-	return append(attributionTexts, fmt.Sprintf("%s: %s", key, value))
+	return append(annotations, spdx.Annotation{
+		AnnotationDate: timeNow,
+		AnnotationType: spdx.CategoryOther,
+		Annotator: spdx.Annotator{
+			Annotator:     fmt.Sprintf("%s-%s", CreatorTool, m.appVersion),
+			AnnotatorType: PackageAnnotatorToolField,
+		},
+		AnnotationComment: fmt.Sprintf("%s: %s", key, value),
+	})
 }
 
 func (m *Marshaler) purlExternalReference(packageURL string) *spdx.PackageExternalReference {
@@ -286,7 +300,7 @@ func (m *Marshaler) advisoryExternalReference(primaryURL string) *spdx.PackageEx
 	}
 }
 
-func (m *Marshaler) spdxPackage(c *core.Component, pkgDownloadLocation string) (spdx.Package, error) {
+func (m *Marshaler) spdxPackage(c *core.Component, timeNow, pkgDownloadLocation string) (spdx.Package, error) {
 	pkgID, err := calcPkgID(m.hasher, c)
 	if err != nil {
 		return spdx.Package{}, xerrors.Errorf("failed to get os metadata package ID: %w", err)
@@ -342,7 +356,7 @@ func (m *Marshaler) spdxPackage(c *core.Component, pkgDownloadLocation string) (
 		PrimaryPackagePurpose:     purpose,
 		PackageDownloadLocation:   pkgDownloadLocation,
 		PackageExternalReferences: pkgExtRefs,
-		PackageAttributionTexts:   m.spdxAttributionTexts(c),
+		Annotations:               m.spdxAnnotations(c, timeNow),
 		PackageSourceInfo:         sourceInfo,
 		PackageSupplier:           supplier,
 		PackageChecksums:          m.spdxChecksums(digests),
@@ -364,21 +378,20 @@ func spdxPkgName(component *core.Component) string {
 	}
 	return component.Name
 }
-
-func (m *Marshaler) spdxAttributionTexts(c *core.Component) []string {
-	var texts []string
+func (m *Marshaler) spdxAnnotations(c *core.Component, timeNow string) []spdx.Annotation {
+	var annotations []spdx.Annotation
 	for _, p := range c.Properties {
 		// Add properties that are not in other fields.
 		if !slices.Contains(duplicateProperties, p.Name) {
-			texts = m.appendAttributionText(texts, p.Name, p.Value)
+			annotations = m.appendAnnotation(annotations, timeNow, p.Name, p.Value)
 		}
 	}
-	return texts
+	return annotations
 }
 
 func (m *Marshaler) spdxLicense(c *core.Component) string {
 	if len(c.Licenses) == 0 {
-		return noneField
+		return noAssertionField
 	}
 	return NormalizeLicense(c.Licenses)
 }
@@ -546,7 +559,7 @@ func NormalizeLicense(licenses []string) string {
 
 		return fmt.Sprintf("(%s)", license)
 	}), " AND ")
-	s, err := expression.Normalize(license, licensing.Normalize, expression.NormalizeForSPDX)
+	s, err := expression.Normalize(license, licensing.NormalizeLicense, expression.NormalizeForSPDX)
 	if err != nil {
 		// Not fail on the invalid license
 		log.Warn("Unable to marshal SPDX licenses", log.String("license", license))

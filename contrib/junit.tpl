@@ -20,7 +20,7 @@
     </testsuite>
 
 {{- if .MisconfSummary }}
-    <testsuite tests="{{ add .MisconfSummary.Successes .MisconfSummary.Failures }}" failures="{{ .MisconfSummary.Failures }}" name="{{  .Target }}" errors="0" skipped="{{ .MisconfSummary.Exceptions }}" time="">
+    <testsuite tests="{{ add .MisconfSummary.Successes .MisconfSummary.Failures }}" failures="{{ .MisconfSummary.Failures }}" name="{{  .Target }}" errors="0" time="">
 {{- else }}
     <testsuite tests="0" failures="0" name="{{  .Target }}" errors="0" skipped="0" time="">
 {{- end }}
@@ -37,6 +37,17 @@
         </testcase>
     {{- end }}
     </testsuite>
+
+{{- if .Licenses }}
+    {{- $licenses := len .Licenses }}
+    <testsuite tests="{{ $licenses }}" failures="{{ $licenses }}" name="{{ .Target }}" time="0">{{ range .Licenses }}
+        <testcase classname="{{ .PkgName }}" name="[{{ .Severity }}] {{ .Name }}">
+            <failure/>
+        </testcase>
+    {{- end }}
+    </testsuite>
+{{- end }}
+
 {{- $failures := len .Secrets }}
     <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{  .Target }}" errors="0" skipped="0" time="">
     {{- if not (eq .Type "") }}

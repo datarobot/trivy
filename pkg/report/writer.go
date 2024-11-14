@@ -2,10 +2,10 @@ package report
 
 import (
 	"context"
-	"errors"
 	"io"
 	"strings"
 
+	"github.com/hashicorp/go-multierror"
 	"golang.org/x/xerrors"
 
 	cr "github.com/aquasecurity/trivy/pkg/compliance/report"
@@ -32,7 +32,7 @@ func Write(ctx context.Context, report types.Report, option flag.Options) (err e
 	}
 	defer func() {
 		if cerr := cleanup(); cerr != nil {
-			err = errors.Join(err, cerr)
+			err = multierror.Append(err, cerr)
 		}
 	}()
 
@@ -56,8 +56,9 @@ func Write(ctx context.Context, report types.Report, option flag.Options) (err e
 		}
 	case types.FormatJSON:
 		writer = &JSONWriter{
-			Output:      output,
-			ListAllPkgs: option.ListAllPkgs,
+			Output:         output,
+			ListAllPkgs:    option.ListAllPkgs,
+			ShowSuppressed: option.ShowSuppressed,
 		}
 	case types.FormatGitHub:
 		writer = &github.Writer{

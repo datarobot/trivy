@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/aquasecurity/trivy/pkg/iac/framework"
 	"github.com/aquasecurity/trivy/pkg/iac/rego"
 	"github.com/aquasecurity/trivy/pkg/iac/scan"
 	"github.com/aquasecurity/trivy/pkg/iac/scanners"
@@ -18,8 +17,8 @@ import (
 	"github.com/aquasecurity/trivy/pkg/iac/scanners/terraform/executor"
 	"github.com/aquasecurity/trivy/pkg/iac/scanners/terraform/parser"
 	"github.com/aquasecurity/trivy/pkg/iac/terraform"
-	"github.com/aquasecurity/trivy/pkg/iac/types"
 	"github.com/aquasecurity/trivy/pkg/log"
+	"github.com/aquasecurity/trivy/pkg/set"
 )
 
 var _ scanners.FSScanner = (*Scanner)(nil)
@@ -32,22 +31,10 @@ type Scanner struct {
 	options      []options.ScannerOption
 	parserOpt    []parser.Option
 	executorOpt  []executor.Option
-	dirs         map[string]struct{}
+	dirs         set.Set[string]
 	forceAllDirs bool
 	regoScanner  *rego.Scanner
 	execLock     sync.RWMutex
-}
-
-func (s *Scanner) SetIncludeDeprecatedChecks(b bool) {
-	s.executorOpt = append(s.executorOpt, executor.OptionWithIncludeDeprecatedChecks(b))
-}
-
-func (s *Scanner) SetRegoOnly(regoOnly bool) {
-	s.executorOpt = append(s.executorOpt, executor.OptionWithRegoOnly(regoOnly))
-}
-
-func (s *Scanner) SetFrameworks(frameworks []framework.Framework) {
-	s.executorOpt = append(s.executorOpt, executor.OptionWithFrameworks(frameworks...))
 }
 
 func (s *Scanner) Name() string {
@@ -68,7 +55,7 @@ func (s *Scanner) AddExecutorOptions(opts ...executor.Option) {
 
 func New(opts ...options.ScannerOption) *Scanner {
 	s := &Scanner{
-		dirs:    make(map[string]struct{}),
+		dirs:    set.New[string](),
 		options: opts,
 		logger:  log.WithPrefix("terraform scanner"),
 	}
@@ -84,7 +71,7 @@ func (s *Scanner) initRegoScanner(srcFS fs.FS) (*rego.Scanner, error) {
 	if s.regoScanner != nil {
 		return s.regoScanner, nil
 	}
-	regoScanner := rego.NewScanner(types.SourceCloud, s.options...)
+	regoScanner := rego.NewScanner(s.options...)
 	if err := regoScanner.LoadPolicies(srcFS); err != nil {
 		return nil, err
 	}
@@ -158,7 +145,7 @@ func (s *Scanner) ScanFS(ctx context.Context, target fs.FS, dir string) (scan.Re
 		s.execLock.RLock()
 		e := executor.New(s.executorOpt...)
 		s.execLock.RUnlock()
-		results, err := e.Execute(module.childs)
+		results, err := e.Execute(ctx, module.childs, module.rootPath)
 		if err != nil {
 			return nil, err
 		}

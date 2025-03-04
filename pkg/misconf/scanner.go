@@ -58,7 +58,6 @@ type DisabledCheck struct {
 
 type ScannerOption struct {
 	Trace                    bool
-	RegoOnly                 bool
 	Namespaces               []string
 	PolicyPaths              []string
 	DataPaths                []string
@@ -227,7 +226,7 @@ func scannerOptions(t detection.FileType, opt ScannerOption) ([]options.ScannerO
 	opts := []options.ScannerOption{
 		rego.WithEmbeddedPolicies(!opt.DisableEmbeddedPolicies),
 		rego.WithEmbeddedLibraries(!opt.DisableEmbeddedLibraries),
-		options.ScannerWithIncludeDeprecatedChecks(opt.IncludeDeprecatedChecks),
+		rego.WithIncludeDeprecatedChecks(opt.IncludeDeprecatedChecks),
 		rego.WithDisabledCheckIDs(disabledCheckIDs...),
 	}
 
@@ -256,10 +255,6 @@ func scannerOptions(t detection.FileType, opt ScannerOption) ([]options.ScannerO
 
 	if opt.Trace {
 		opts = append(opts, rego.WithPerResultTracing(true))
-	}
-
-	if opt.RegoOnly {
-		opts = append(opts, options.ScannerWithRegoOnly(true))
 	}
 
 	if len(policyPaths) > 0 {
@@ -453,7 +448,7 @@ func ResultsToMisconf(configType types.ConfigType, scannerName string, results s
 			ruleID = result.Rule().Aliases[0]
 		}
 
-		cause := NewCauseWithCode(result)
+		cause := NewCauseWithCode(result, flattened)
 
 		misconfResult := types.MisconfResult{
 			Namespace: result.RegoNamespace(),
@@ -482,24 +477,20 @@ func ResultsToMisconf(configType types.ConfigType, scannerName string, results s
 			}
 		}
 
-		if flattened.Warning {
-			misconf.Warnings = append(misconf.Warnings, misconfResult)
-		} else {
-			switch flattened.Status {
-			case scan.StatusPassed:
-				misconf.Successes = append(misconf.Successes, misconfResult)
-			case scan.StatusFailed:
-				misconf.Failures = append(misconf.Failures, misconfResult)
-			}
+		switch flattened.Status {
+		case scan.StatusPassed:
+			misconf.Successes = append(misconf.Successes, misconfResult)
+		case scan.StatusFailed:
+			misconf.Failures = append(misconf.Failures, misconfResult)
 		}
+
 		misconfs[filePath] = misconf
 	}
 
 	return types.ToMisconfigurations(misconfs)
 }
 
-func NewCauseWithCode(underlying scan.Result) types.CauseMetadata {
-	flat := underlying.Flatten()
+func NewCauseWithCode(underlying scan.Result, flat scan.FlatResult) types.CauseMetadata {
 	cause := types.CauseMetadata{
 		Resource:  flat.Resource,
 		Provider:  flat.RuleProvider.DisplayName(),
@@ -522,6 +513,14 @@ func NewCauseWithCode(underlying scan.Result) types.CauseMetadata {
 	// failures can happen either due to lack of
 	// OR misconfiguration of something
 	if underlying.Status() == scan.StatusFailed {
+		if flat.RenderedCause.Raw != "" {
+			highlighted, _ := scan.Highlight(flat.Location.Filename, flat.RenderedCause.Raw, scan.DarkTheme)
+			cause.RenderedCause = types.RenderedCause{
+				Raw:         flat.RenderedCause.Raw,
+				Highlighted: highlighted,
+			}
+		}
+
 		if code, err := underlying.GetCode(); err == nil {
 			cause.Code = types.Code{
 				Lines: lo.Map(code.Lines, func(l scan.Line, i int) types.Line {

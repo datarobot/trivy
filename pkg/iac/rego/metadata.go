@@ -2,6 +2,7 @@ package rego
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -39,6 +40,7 @@ type StaticMetadata struct {
 	Library            bool
 	CloudFormation     *scan.EngineMetadata
 	Terraform          *scan.EngineMetadata
+	Examples           string
 }
 
 func NewStaticMetadata(pkgPath string, inputOpt InputOptions) *StaticMetadata {
@@ -75,6 +77,7 @@ func (sm *StaticMetadata) update(meta map[string]any) error {
 	upd(&sm.Provider, "provider")
 	upd(&sm.RecommendedActions, "recommended_actions")
 	upd(&sm.RecommendedActions, "recommended_action")
+	upd(&sm.Examples, "examples")
 
 	if raw, ok := meta["deprecated"]; ok {
 		if dep, ok := raw.(bool); ok {
@@ -222,7 +225,6 @@ func NewEngineMetadata(schema string, meta map[string]any) (*scan.EngineMetadata
 }
 
 type InputOptions struct {
-	Combined  bool
 	Selectors []Selector
 }
 
@@ -270,6 +272,7 @@ func (m StaticMetadata) ToRule() scan.Rule {
 		Frameworks:     m.Frameworks,
 		CloudFormation: m.CloudFormation,
 		Terraform:      m.Terraform,
+		Examples:       m.Examples,
 	}
 }
 
@@ -330,15 +333,15 @@ func (m *MetadataRetriever) RetrieveMetadata(ctx context.Context, module *ast.Mo
 	}
 
 	if len(set) != 1 {
-		return nil, fmt.Errorf("failed to parse metadata: unexpected set length")
+		return nil, errors.New("failed to parse metadata: unexpected set length")
 	}
 	if len(set[0].Expressions) != 1 {
-		return nil, fmt.Errorf("failed to parse metadata: unexpected expression length")
+		return nil, errors.New("failed to parse metadata: unexpected expression length")
 	}
 	expression := set[0].Expressions[0]
 	meta, ok := expression.Value.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("failed to parse metadata: not an object")
+		return nil, errors.New("failed to parse metadata: not an object")
 	}
 
 	if err := metadata.update(meta); err != nil {
@@ -352,7 +355,6 @@ func (m *MetadataRetriever) RetrieveMetadata(ctx context.Context, module *ast.Mo
 func (m *MetadataRetriever) queryInputOptions(ctx context.Context, module *ast.Module) InputOptions {
 
 	options := InputOptions{
-		Combined:  false,
 		Selectors: nil,
 	}
 
@@ -393,12 +395,6 @@ func (m *MetadataRetriever) queryInputOptions(ctx context.Context, module *ast.M
 			return options
 		}
 		metadata = meta
-	}
-
-	if raw, ok := metadata["combine"]; ok {
-		if combine, ok := raw.(bool); ok {
-			options.Combined = combine
-		}
 	}
 
 	if raw, ok := metadata["selector"]; ok {

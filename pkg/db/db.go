@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,6 +29,10 @@ var (
 	// GitHub Container Registry
 	DefaultGHCRRepository = fmt.Sprintf("%s:%d", "ghcr.io/aquasecurity/trivy-db", db.SchemaVersion)
 	defaultGHCRRepository = lo.Must(name.NewTag(DefaultGHCRRepository))
+
+	// GCR mirror
+	DefaultGCRRepository = fmt.Sprintf("%s:%d", "mirror.gcr.io/aquasec/trivy-db", db.SchemaVersion)
+	defaultGCRRepository = lo.Must(name.NewTag(DefaultGCRRepository))
 
 	Init  = db.Init
 	Close = db.Close
@@ -73,6 +78,7 @@ func Dir(cacheDir string) string {
 func NewClient(dbDir string, quiet bool, opts ...Option) *Client {
 	o := &options{
 		dbRepositories: []name.Reference{
+			defaultGCRRepository,
 			defaultGHCRRepository,
 		},
 	}
@@ -91,14 +97,22 @@ func NewClient(dbDir string, quiet bool, opts ...Option) *Client {
 
 // NeedsUpdate check is DB needs update
 func (c *Client) NeedsUpdate(ctx context.Context, cliVersion string, skip bool) (bool, error) {
+	var noRequiredFiles bool
+	if _, err := os.Stat(db.Path(c.dbDir)); errors.Is(err, os.ErrNotExist) {
+		log.DebugContext(ctx, "There is no db file")
+		noRequiredFiles = true
+	}
 	meta, err := c.metadata.Get()
 	if err != nil {
 		log.DebugContext(ctx, "There is no valid metadata file", log.Err(err))
-		if skip {
-			log.ErrorContext(ctx, "The first run cannot skip downloading DB")
-			return false, xerrors.New("--skip-update cannot be specified on the first run")
-		}
+		noRequiredFiles = true
+
 		meta = metadata.Metadata{Version: db.SchemaVersion}
+	}
+
+	if skip && noRequiredFiles {
+		log.ErrorContext(ctx, "The first run cannot skip downloading DB")
+		return false, xerrors.New("--skip-update cannot be specified on the first run")
 	}
 
 	if db.SchemaVersion < meta.Version {

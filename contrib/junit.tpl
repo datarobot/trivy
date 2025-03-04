@@ -48,15 +48,16 @@
     </testsuite>
 {{- end }}
 
-{{- $failures := len .Secrets }}
-    <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{  .Target }}" errors="0" skipped="0" time="">
+{{- if .Secrets }}
+    {{- $secrets := len .Secrets }}
+    <testsuite tests="{{ $secrets }}" failures="{{ $secrets }}" name="{{ .Target }}" errors="0" skipped="0" time="0">
     {{- if not (eq .Type "") }}
         <properties>
             <property name="type" value="{{ .Type }}"></property>
         </properties>
-        {{- end -}}
-        {{ $Path := .Target }}
-        {{ range .Secrets }}
+    {{- end -}}
+    {{- $Path := .Target -}}
+    {{- range .Secrets }}
         <testcase file="{{ escapeXML $Path }}" classname="{{ .Category }}" name="[{{ .Severity }}] {{ .RuleID }}" time="">
             <failure message="{{ escapeXML .Title }}" type="description">{{ escapeXML .Match }}</failure>
         </testcase>

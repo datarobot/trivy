@@ -105,6 +105,7 @@ db:
 
   # Same as '--java-db-repository'
   java-repository:
+   - mirror.gcr.io/aquasec/trivy-java-db:1
    - ghcr.io/aquasecurity/trivy-java-db:1
 
   # Same as '--skip-java-db-update'
@@ -115,6 +116,7 @@ db:
 
   # Same as '--db-repository'
   repository:
+   - mirror.gcr.io/aquasec/trivy-db:2
    - ghcr.io/aquasecurity/trivy-db:2
 
   # Same as '--skip-db-update'
@@ -134,6 +136,9 @@ image:
 
   # Same as '--input'
   input: ""
+
+  # Same as '--max-image-size'
+  max-size: ""
 
   # Same as '--platform'
   platform: ""
@@ -373,7 +378,7 @@ license:
 ```yaml
 misconfiguration:
   # Same as '--checks-bundle-repository'
-  checks-bundle-repository: "ghcr.io/aquasecurity/trivy-checks:1"
+  checks-bundle-repository: "mirror.gcr.io/aquasec/trivy-checks:1"
 
   cloudformation:
     # Same as '--cf-params'
@@ -403,6 +408,9 @@ misconfiguration:
 
   # Same as '--include-non-failures'
   include-non-failures: false
+
+  # Same as '--render-cause'
+  render-cause: []
 
   # Same as '--misconfig-scanners'
   scanners:
@@ -445,6 +453,7 @@ pkg:
   relationships:
    - unknown
    - root
+   - workspace
    - direct
    - indirect
 
@@ -458,6 +467,8 @@ pkg:
 
 ```yaml
 registry:
+  mirrors:
+
   # Same as '--password'
   password: []
 
@@ -542,6 +553,11 @@ severity:
  - HIGH
  - CRITICAL
 
+# Same as '--table-mode'
+table-mode:
+ - summary
+ - detailed
+
 # Same as '--template'
 template: ""
 
@@ -566,6 +582,9 @@ repository:
 scan:
   # Same as '--detection-priority'
   detection-priority: "precise"
+
+  # Same as '--distro'
+  distro: ""
 
   # Same as '--file-patterns'
   file-patterns: []
@@ -611,6 +630,10 @@ vulnerability:
 
   # Same as '--ignore-unfixed'
   ignore-unfixed: false
+
+  # Same as '--vuln-severity-source'
+  severity-source:
+   - auto
 
   # Same as '--skip-vex-repo-update'
   skip-vex-repo-update: false

@@ -3,6 +3,7 @@ package parser
 import (
 	"bytes"
 	"context"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -1647,9 +1648,10 @@ func TestNestedDynamicBlock(t *testing.T) {
 	assert.Len(t, nested, 4)
 }
 
-func parse(t *testing.T, files map[string]string) terraform.Modules {
+func parse(t *testing.T, files map[string]string, opts ...Option) terraform.Modules {
 	fs := testutil.CreateFS(t, files)
-	parser := New(fs, "", OptionStopOnHCLError(true))
+	opts = append(opts, OptionStopOnHCLError(true))
+	parser := New(fs, "", opts...)
 	require.NoError(t, parser.ParseFS(context.TODO(), "."))
 
 	modules, _, err := parser.EvaluateAll(context.TODO())
@@ -1699,6 +1701,74 @@ resource "test_resource" "this" {
 	require.NotNil(t, attr)
 
 	assert.Equal(t, "test_value", attr.GetRawValue())
+}
+
+// TestNestedModulesOptions ensures parser options are carried to the nested
+// submodule evaluators.
+// The test will include an invalid module that will fail to download
+// if it is attempted.
+func TestNestedModulesOptions(t *testing.T) {
+	// reset the previous default logger
+	prevLog := slog.Default()
+	defer slog.SetDefault(prevLog)
+	var buf bytes.Buffer
+	slog.SetDefault(slog.New(log.NewHandler(&buf, nil)))
+
+	files := map[string]string{
+		"main.tf": `
+module "city" {
+	source = "./modules/city"
+}
+
+resource "city" "neighborhoods" {
+	names = module.city.neighborhoods
+}
+`,
+		"modules/city/main.tf": `
+module "brooklyn" {
+	source = "./brooklyn"
+}
+
+module "queens" {
+	source = "./queens"
+}
+
+output "neighborhoods" {
+	value = [module.brooklyn.name, module.queens.name]
+}
+`,
+		"modules/city/brooklyn/main.tf": `
+output "name" {
+	value = "Brooklyn"
+}
+`,
+		"modules/city/queens/main.tf": `
+output "name" {
+	value = "Queens"
+}
+
+module "invalid" {
+	source         = "https://example.invaliddomain"
+}
+`,
+	}
+
+	// Using the OptionWithDownloads(false) option will prevent the invalid
+	// module from being downloaded. If the log exists "failed to download"
+	// then the submodule evaluator attempted to download, which was disallowed.
+	modules := parse(t, files, OptionWithDownloads(false))
+	require.Len(t, modules, 4)
+
+	resources := modules.GetResourcesByType("city")
+	require.Len(t, resources, 1)
+
+	for _, res := range resources {
+		attr, _ := res.GetNestedAttribute("names")
+		require.NotNil(t, attr, res.FullName())
+		assert.Equal(t, []string{"Brooklyn", "Queens"}, attr.GetRawValue())
+	}
+
+	require.NotContains(t, buf.String(), "failed to download")
 }
 
 func TestCyclicModules(t *testing.T) {
@@ -2007,4 +2077,182 @@ variable "baz" {}
 
 	assert.Contains(t, buf.String(), "Variable values was not found in the environment or variable files.")
 	assert.Contains(t, buf.String(), "variables=\"foo\"")
+}
+
+func TestLoadChildModulesFromLocalCache(t *testing.T) {
+	var buf bytes.Buffer
+	slog.SetDefault(slog.New(log.NewHandler(&buf, &log.Options{Level: log.LevelDebug})))
+
+	fsys := fstest.MapFS{
+		"main.tf": &fstest.MapFile{Data: []byte(`module "level_1" {
+  source = "./modules/level_1"
+}`)},
+		"modules/level_1/main.tf": &fstest.MapFile{Data: []byte(`module "level_2" {
+  source  = "../level_2"
+}`)},
+		"modules/level_2/main.tf": &fstest.MapFile{Data: []byte(`module "level_3" {
+  count = 2
+  source  = "../level_3"
+}`)},
+		"modules/level_3/main.tf": &fstest.MapFile{Data: []byte(`resource "foo" "bar" {}`)},
+		".terraform/modules/modules.json": &fstest.MapFile{Data: []byte(`{
+    "Modules": [
+        { "Key": "", "Source": "", "Dir": "." },
+        {
+            "Key": "level_1",
+            "Source": "./modules/level_1",
+            "Dir": "modules/level_1"
+        },
+        {
+            "Key": "level_1.level_2",
+            "Source": "../level_2",
+            "Dir": "modules/level_2"
+        },
+        {
+            "Key": "level_1.level_2.level_3",
+            "Source": "../level_3",
+            "Dir": "modules/level_3"
+        }
+    ]
+}`)},
+	}
+
+	parser := New(
+		fsys, "",
+		OptionStopOnHCLError(true),
+	)
+	require.NoError(t, parser.ParseFS(context.TODO(), "."))
+
+	modules, _, err := parser.EvaluateAll(context.TODO())
+	require.NoError(t, err)
+
+	assert.Len(t, modules, 5)
+
+	assert.Contains(t, buf.String(), "Using module from Terraform cache .terraform/modules\tsource=\"./modules/level_1\"")
+	assert.Contains(t, buf.String(), "Using module from Terraform cache .terraform/modules\tsource=\"../level_2\"")
+	assert.Contains(t, buf.String(), "Using module from Terraform cache .terraform/modules\tsource=\"../level_3\"")
+	assert.Contains(t, buf.String(), "Using module from Terraform cache .terraform/modules\tsource=\"../level_3\"")
+}
+
+func TestLogParseErrors(t *testing.T) {
+	var buf bytes.Buffer
+	slog.SetDefault(slog.New(log.NewHandler(&buf, nil)))
+
+	src := `resource "aws-s3-bucket" "name" {
+  bucket = <
+}`
+
+	fsys := fstest.MapFS{
+		"main.tf": &fstest.MapFile{
+			Data: []byte(src),
+		},
+	}
+
+	parser := New(fsys, "")
+	err := parser.ParseFS(context.TODO(), ".")
+	require.NoError(t, err)
+
+	assert.Contains(t, buf.String(), `cause="  bucket = <"`)
+}
+
+func Test_PassingNullToChildModule_DoesNotEraseType(t *testing.T) {
+	tests := []struct {
+		name string
+		fsys fs.FS
+	}{
+		{
+			name: "typed variable",
+			fsys: fstest.MapFS{
+				"main.tf": &fstest.MapFile{Data: []byte(`module "test" {
+  source   = "./modules/test"
+  test_var = null
+}`)},
+				"modules/test/main.tf": &fstest.MapFile{Data: []byte(`variable "test_var" {
+  type    = number
+}
+
+resource "foo" "this" {
+  bar = var.test_var != null ? 1 : 2
+}`)},
+			},
+		},
+		{
+			name: "typed variable with default",
+			fsys: fstest.MapFS{
+				"main.tf": &fstest.MapFile{Data: []byte(`module "test" {
+  source   = "./modules/test"
+  test_var = null
+}`)},
+				"modules/test/main.tf": &fstest.MapFile{Data: []byte(`variable "test_var" {
+  type    = number
+  default = null
+}
+
+resource "foo" "this" {
+  bar = var.test_var != null ? 1 : 2
+}`)},
+			},
+		},
+		{
+			name: "empty variable",
+			fsys: fstest.MapFS{
+				"main.tf": &fstest.MapFile{Data: []byte(`module "test" {
+  source   = "./modules/test"
+  test_var = null
+}`)},
+				"modules/test/main.tf": &fstest.MapFile{Data: []byte(`variable "test_var" {}
+
+resource "foo" "this" {
+  bar = var.test_var != null ? 1 : 2
+}`)},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parser := New(
+				tt.fsys, "",
+				OptionStopOnHCLError(true),
+			)
+			require.NoError(t, parser.ParseFS(context.TODO(), "."))
+
+			_, err := parser.Load(context.TODO())
+			require.NoError(t, err)
+
+			modules, _, err := parser.EvaluateAll(context.TODO())
+			require.NoError(t, err)
+
+			res := modules.GetResourcesByType("foo")[0]
+			attr := res.GetAttribute("bar")
+			val, _ := attr.Value().AsBigFloat().Int64()
+			assert.Equal(t, int64(2), val)
+		})
+	}
+}
+
+func TestAttrRefToNullVariable(t *testing.T) {
+	fsys := fstest.MapFS{
+		"main.tf": &fstest.MapFile{Data: []byte(`variable "name" {
+  type    = string
+  default = null
+}
+
+resource "aws_s3_bucket" "example" {
+  bucket = var.name
+}`)},
+	}
+
+	parser := New(fsys, "", OptionStopOnHCLError(true))
+
+	require.NoError(t, parser.ParseFS(context.TODO(), "."))
+
+	_, err := parser.Load(context.TODO())
+	require.NoError(t, err)
+
+	modules, _, err := parser.EvaluateAll(context.TODO())
+	require.NoError(t, err)
+
+	val := modules.GetResourcesByType("aws_s3_bucket")[0].GetAttribute("bucket").GetRawValue()
+	assert.Nil(t, val)
 }

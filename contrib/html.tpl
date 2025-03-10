@@ -89,7 +89,7 @@
     <table>
     {{- range . }}
     <tr class="group-header">
-      <th colspan="7">Target: {{ escapeXML .Target }} &mdash;</th>
+      <th colspan="7">Target: {{ escapeXML .Target }}</th>
     </tr>
       {{- if (eq (len .Vulnerabilities) 0) }}
       <tr><th colspan="7">No Vulnerabilities found</th></tr>

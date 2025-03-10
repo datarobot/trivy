@@ -8,7 +8,7 @@
             <property name="type" value="{{ .Type }}"></property>
         </properties>
     {{- end -}}
-    {{ range .Vulnerabilities }}
+    {{- range .Vulnerabilities }}
         <testcase classname="{{ .PkgName | replace "/" "." }}-{{ .InstalledVersion }}" file="{{ .PkgName }}" name="[{{ .Vulnerability.Severity }}] {{ .VulnerabilityID }}" time="">
           <failure message="{{ escapeXML .Title }}" type="description">
             Severity: {{ .Severity }}
@@ -20,16 +20,16 @@
     </testsuite>
 
 {{- if .MisconfSummary }}
-    <testsuite tests="{{ add .MisconfSummary.Successes .MisconfSummary.Failures }}" failures="{{ .MisconfSummary.Failures }}" name="{{  .Target }}" errors="0" time="">
+    <testsuite tests="{{ add .MisconfSummary.Successes .MisconfSummary.Failures }}" failures="{{ .MisconfSummary.Failures }}" name="{{ .Target }}" errors="0" skipped="0" time="">
 {{- else }}
-    <testsuite tests="0" failures="0" name="{{  .Target }}" errors="0" skipped="0" time="">
+    <testsuite tests="0" failures="0" name="{{ .Target }}" errors="0" skipped="0" time="">
 {{- end }}
     {{- if not (eq .Type "") }}
         <properties>
             <property name="type" value="{{ .Type }}"></property>
         </properties>
     {{- end -}}
-    {{ range .Misconfigurations }}
+    {{- range .Misconfigurations }}
         <testcase classname="{{ .Type }}" name="[{{ .Severity }}] {{ .ID }}" time="">
         {{- if (eq .Status "FAIL") }}
             <failure message="{{ escapeXML .Title }}" type="description">{{ escapeXML .Description }}</failure>
@@ -40,9 +40,18 @@
 
 {{- if .Licenses }}
     {{- $licenses := len .Licenses }}
-    <testsuite tests="{{ $licenses }}" failures="{{ $licenses }}" name="{{ .Target }}" time="0">{{ range .Licenses }}
-        <testcase classname="{{ .PkgName }}" name="[{{ .Severity }}] {{ .Name }}">
-            <failure/>
+    <testsuite tests="{{ $licenses }}" failures="{{ $licenses }}" name="{{ .Target }}" errors="0" skipped="0" time="">
+        {{- $Path := .Target -}}
+        {{- range .Licenses }}
+        <testcase file="{{ escapeXML $Path }}" classname="{{ .Category }}" name="[{{ .Severity }}] License {{ escapeXML .Name }} {{ escapeXML .PkgName }} {{ escapeXML .FilePath }}" time="">
+            <failure message="{{ escapeXML .Name }} {{ escapeXML .PkgName }}" type="description">
+              Severity: {{ .Severity }}
+              License: {{ .Name }}
+              Package Name (if available): {{ .PkgName }}
+              File Path (if available): {{ .FilePath }}
+              Confidence: {{ .Confidence }}
+              Link: {{ escapeXML .Link }}
+            </failure>
         </testcase>
     {{- end }}
     </testsuite>
@@ -60,36 +69,6 @@
     {{- range .Secrets }}
         <testcase file="{{ escapeXML $Path }}" classname="{{ .Category }}" name="[{{ .Severity }}] {{ .RuleID }}" time="">
             <failure message="{{ escapeXML .Title }}" type="description">{{ escapeXML .Match }}</failure>
-        </testcase>
-    {{- end }}
-    </testsuite>
-{{- $failures := len .Secrets }}
-    <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{ .Target }}" errors="0" skipped="0" time="">
-    {{- if not (eq .Type "") }}
-        <properties>
-            <property name="type" value="{{ .Type }}"></property>
-        </properties>
-        {{- end -}}
-        {{ $Path := .Target }}
-        {{ range .Secrets }}
-        <testcase file="{{ escapeXML $Path }}" classname="{{ .Category }}" name="[{{ .Severity }}] {{ .RuleID }}" time="">
-            <failure message="{{ escapeXML .Title }}" type="description">{{ escapeXML .Match }}</failure>
-        </testcase>
-    {{- end }}
-    </testsuite>
-{{- $failures := len .Licenses }}
-    <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{ .Target }}" errors="0" skipped="0" time="">
-        {{ $Path := .Target }}
-        {{ range .Licenses }}
-        <testcase file="{{ escapeXML $Path }}" classname="{{ .Category }}" name="[{{ .Severity }}] License {{ .Name }} {{ .PkgName }} {{ .FilePath }}" time="">
-            <failure message="{{ .Name }} {{ .PkgName }}" type="description">
-              Severity: {{ .Severity }}
-              License: {{ .Name }}
-              Package Name (if available): {{ .PkgName }}
-              File Path (if available): {{ .FilePath }}
-              Confidence: {{ .Confidence }}
-              Link: {{ escapeXML .Link }}
-            </failure>
         </testcase>
     {{- end }}
     </testsuite>

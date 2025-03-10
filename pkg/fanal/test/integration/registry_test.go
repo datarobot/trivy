@@ -12,8 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/aquasecurity/trivy/pkg/fanal/analyzer"
-
+	dockercontainer "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/assert"
@@ -21,11 +20,13 @@ import (
 	testcontainers "github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
+	"github.com/aquasecurity/trivy/internal/testutil"
+	"github.com/aquasecurity/trivy/pkg/cache"
+	"github.com/aquasecurity/trivy/pkg/fanal/analyzer"
 	_ "github.com/aquasecurity/trivy/pkg/fanal/analyzer/all"
 	"github.com/aquasecurity/trivy/pkg/fanal/applier"
 	"github.com/aquasecurity/trivy/pkg/fanal/artifact"
 	aimage "github.com/aquasecurity/trivy/pkg/fanal/artifact/image"
-	"github.com/aquasecurity/trivy/pkg/fanal/cache"
 	"github.com/aquasecurity/trivy/pkg/fanal/image"
 	testdocker "github.com/aquasecurity/trivy/pkg/fanal/test/integration/docker"
 	"github.com/aquasecurity/trivy/pkg/fanal/types"
@@ -44,6 +45,7 @@ func TestTLSRegistry(t *testing.T) {
 	baseDir, err := filepath.Abs(".")
 	require.NoError(t, err)
 
+	t.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
 	req := testcontainers.ContainerRequest{
 		Name:         "registry",
 		Image:        registryImage,
@@ -60,6 +62,9 @@ func TestTLSRegistry(t *testing.T) {
 			testcontainers.BindMount(filepath.Join(baseDir, "data", "registry", "certs"), "/certs"),
 			testcontainers.BindMount(filepath.Join(baseDir, "data", "registry", "auth"), "/auth"),
 		),
+		HostConfigModifier: func(hostConfig *dockercontainer.HostConfig) {
+			hostConfig.AutoRemove = true
+		},
 		WaitingFor: wait.ForLog("listening on [::]:5443"),
 	}
 
@@ -68,7 +73,7 @@ func TestTLSRegistry(t *testing.T) {
 		Started:          true,
 	})
 	require.NoError(t, err)
-	defer registryC.Terminate(ctx)
+	testcontainers.CleanupContainer(t, registryC)
 
 	registryURL, err := getRegistryURL(ctx, registryC, registryPort)
 	require.NoError(t, err)
@@ -83,7 +88,7 @@ func TestTLSRegistry(t *testing.T) {
 		name         string
 		imageName    string
 		imageFile    string
-		option       types.RemoteOptions
+		option       types.ImageOptions
 		login        bool
 		expectedOS   types.OS
 		expectedRepo types.Repository
@@ -91,16 +96,18 @@ func TestTLSRegistry(t *testing.T) {
 	}{
 		{
 			name:      "happy path",
-			imageName: "ghcr.io/aquasecurity/trivy-test-images:alpine-310",
+			imageName: testutil.ImageName("", "alpine-310", ""),
 			imageFile: "../../../../integration/testdata/fixtures/images/alpine-310.tar.gz",
-			option: types.RemoteOptions{
-				Credentials: []types.Credential{
-					{
-						Username: registryUsername,
-						Password: registryPassword,
+			option: types.ImageOptions{
+				RegistryOptions: types.RegistryOptions{
+					Credentials: []types.Credential{
+						{
+							Username: registryUsername,
+							Password: registryPassword,
+						},
 					},
+					Insecure: true,
 				},
-				Insecure: true,
 			},
 			expectedOS: types.OS{
 				Name:   "3.10.2",
@@ -114,10 +121,12 @@ func TestTLSRegistry(t *testing.T) {
 		},
 		{
 			name:      "happy path with docker login",
-			imageName: "ghcr.io/aquasecurity/trivy-test-images:alpine-310",
+			imageName: testutil.ImageName("", "alpine-310", ""),
 			imageFile: "../../../../integration/testdata/fixtures/images/alpine-310.tar.gz",
-			option: types.RemoteOptions{
-				Insecure: true,
+			option: types.ImageOptions{
+				RegistryOptions: types.RegistryOptions{
+					Insecure: true,
+				},
 			},
 			login: true,
 			expectedOS: types.OS{
@@ -132,13 +141,15 @@ func TestTLSRegistry(t *testing.T) {
 		},
 		{
 			name:      "sad path: tls verify",
-			imageName: "ghcr.io/aquasecurity/trivy-test-images:alpine-310",
+			imageName: testutil.ImageName("", "alpine-310", ""),
 			imageFile: "../../../../integration/testdata/fixtures/images/alpine-310.tar.gz",
-			option: types.RemoteOptions{
-				Credentials: []types.Credential{
-					{
-						Username: registryUsername,
-						Password: registryPassword,
+			option: types.ImageOptions{
+				RegistryOptions: types.RegistryOptions{
+					Credentials: []types.Credential{
+						{
+							Username: registryUsername,
+							Password: registryPassword,
+						},
 					},
 				},
 			},
@@ -146,10 +157,12 @@ func TestTLSRegistry(t *testing.T) {
 		},
 		{
 			name:      "sad path: no credential",
-			imageName: "ghcr.io/aquasecurity/trivy-test-images:alpine-310",
+			imageName: testutil.ImageName("", "alpine-310", ""),
 			imageFile: "../../../../integration/testdata/fixtures/images/alpine-310.tar.gz",
-			option: types.RemoteOptions{
-				Insecure: true,
+			option: types.ImageOptions{
+				RegistryOptions: types.RegistryOptions{
+					Insecure: true,
+				},
 			},
 			wantErr: true,
 		},
@@ -159,6 +172,9 @@ func TestTLSRegistry(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			d, err := testdocker.New()
 			require.NoError(t, err)
+
+			// 0. Set the image source to remote
+			tc.option.ImageSources = types.ImageSources{types.RemoteImageSource}
 
 			// 1. Load a test image from the tar file, tag it and push to the test registry.
 			err = d.ReplicateImage(ctx, tc.imageName, tc.imageFile, config)
@@ -200,7 +216,7 @@ func getRegistryURL(ctx context.Context, registryC testcontainers.Container, exp
 	return url.Parse(urlStr)
 }
 
-func analyze(ctx context.Context, imageRef string, opt types.RemoteOptions) (*types.ArtifactDetail, error) {
+func analyze(ctx context.Context, imageRef string, opt types.ImageOptions) (*types.ArtifactDetail, error) {
 	d, err := ioutil.TempDir("", "TestRegistry-*")
 	if err != nil {
 		return nil, err
@@ -240,6 +256,7 @@ func analyze(ctx context.Context, imageRef string, opt types.RemoteOptions) (*ty
 	if err != nil {
 		return nil, err
 	}
+	defer ar.Clean(imageInfo)
 
 	imageDetail, err := ap.ApplyLayers(imageInfo.ID, imageInfo.BlobIDs)
 	if err != nil {

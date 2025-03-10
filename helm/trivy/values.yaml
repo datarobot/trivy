@@ -77,7 +77,7 @@ trivy:
   gitHubToken: ""
 
   # Docker registry credentials
-  # See also: https://aquasecurity.github.io/trivy/dev/advanced/private-registries/docker-hub/
+  # See also: https://trivy.dev/dev/advanced/private-registries/docker-hub/
   #
   # Either
   # Directly in this file
@@ -136,6 +136,8 @@ service:
   type: ClusterIP
   # port Kubernetes service port
   port: 4954
+  # sessionAffinity Kubernetes service session affinity
+  sessionAffinity: ClientIP
 
 ingress:
   enabled: false

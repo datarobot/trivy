@@ -4,25 +4,32 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+
+	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/aquasecurity/testdocker/auth"
 	"github.com/aquasecurity/testdocker/registry"
+	"github.com/aquasecurity/testdocker/tarfile"
 	"github.com/aquasecurity/trivy/pkg/fanal/types"
+	"github.com/aquasecurity/trivy/pkg/set"
+	"github.com/aquasecurity/trivy/pkg/version/app"
 )
 
-func setupPrivateRegistry() *httptest.Server {
-	imagePaths := map[string]string{
-		"v2/library/alpine:3.10": "../fanal/test/testdata/alpine-310.tar.gz",
+func setupPrivateRegistry(t *testing.T) *httptest.Server {
+	images := map[string]v1.Image{
+		"v2/library/alpine:3.10": localImage(t),
 	}
 	tr := registry.NewDockerRegistry(registry.Option{
-		Images: imagePaths,
+		Images: images,
 		Auth: auth.Auth{
 			User:     "test",
 			Password: "testpass",
@@ -30,6 +37,7 @@ func setupPrivateRegistry() *httptest.Server {
 		},
 	})
 
+	tr.Config.Handler = newUserAgentsTrackingHandler(tr.Config.Handler)
 	return tr
 }
 
@@ -54,7 +62,7 @@ func encode(user, pass string) string {
 }
 
 func TestGet(t *testing.T) {
-	tr := setupPrivateRegistry()
+	tr := setupPrivateRegistry(t)
 	defer tr.Close()
 
 	serverAddr := tr.Listener.Addr().String()
@@ -62,7 +70,7 @@ func TestGet(t *testing.T) {
 	type args struct {
 		imageName string
 		config    string
-		option    types.RemoteOptions
+		option    types.RegistryOptions
 	}
 	tests := []struct {
 		name    string
@@ -74,7 +82,7 @@ func TestGet(t *testing.T) {
 			name: "single credential",
 			args: args{
 				imageName: fmt.Sprintf("%s/library/alpine:3.10", serverAddr),
-				option: types.RemoteOptions{
+				option: types.RegistryOptions{
 					Credentials: []types.Credential{
 						{
 							Username: "test",
@@ -86,10 +94,85 @@ func TestGet(t *testing.T) {
 			},
 		},
 		{
+			name: "mirror",
+			args: args{
+				imageName: "foo.bar.io/library/alpine:3.10",
+				option: types.RegistryOptions{
+					Credentials: []types.Credential{
+						{
+							Username: "test",
+							Password: "testpass",
+						},
+					},
+					RegistryMirrors: map[string][]string{
+						"foo.bar.io": {
+							serverAddr,
+						},
+					},
+					Insecure: true,
+				},
+			},
+		},
+		{
+			name: "mirror for dockerhub",
+			args: args{
+				imageName: "alpine:3.10",
+				option: types.RegistryOptions{
+					Credentials: []types.Credential{
+						{
+							Username: "test",
+							Password: "testpass",
+						},
+					},
+					RegistryMirrors: map[string][]string{
+						"index.docker.io": {
+							serverAddr,
+						},
+					},
+					Insecure: true,
+				},
+			},
+		},
+		{
+			name: "non-existent mirror image - use image from host",
+			args: args{
+				imageName: fmt.Sprintf("%s/library/alpine:3.10", serverAddr),
+				option: types.RegistryOptions{
+					Credentials: []types.Credential{
+						{
+							Username: "test",
+							Password: "testpass",
+						},
+					},
+					RegistryMirrors: map[string][]string{
+						serverAddr: {
+							"wrong.repository",
+						},
+					},
+					Insecure: true,
+				},
+			},
+		},
+		{
+			name: "wrong mirror",
+			args: args{
+				imageName: fmt.Sprintf("%s/library/alpine:3.10", serverAddr),
+				option: types.RegistryOptions{
+					RegistryMirrors: map[string][]string{
+						serverAddr: {
+							"wrong.repository:tag@digest",
+						},
+					},
+					Insecure: true,
+				},
+			},
+			wantErr: "could not parse reference: wrong.repository:tag@digest/library/alpine:3.10",
+		},
+		{
 			name: "multiple credential",
 			args: args{
 				imageName: fmt.Sprintf("%s/library/alpine:3.10", serverAddr),
-				option: types.RemoteOptions{
+				option: types.RegistryOptions{
 					Credentials: []types.Credential{
 						{
 							Username: "foo",
@@ -108,8 +191,8 @@ func TestGet(t *testing.T) {
 			name: "keychain",
 			args: args{
 				imageName: fmt.Sprintf("%s/library/alpine:3.10", serverAddr),
-				config:    fmt.Sprintf(`{"auths": {"%s": {"auth": %q}}}`, serverAddr, encode("test", "testpass")),
-				option: types.RemoteOptions{
+				config:    fmt.Sprintf(`{"auths": {%q: {"auth": %q}}}`, serverAddr, encode("test", "testpass")),
+				option: types.RegistryOptions{
 					Insecure: true,
 				},
 			},
@@ -118,7 +201,7 @@ func TestGet(t *testing.T) {
 			name: "platform",
 			args: args{
 				imageName: fmt.Sprintf("%s/library/alpine:3.10", serverAddr),
-				option: types.RemoteOptions{
+				option: types.RegistryOptions{
 					Credentials: []types.Credential{
 						{
 							Username: "test",
@@ -126,15 +209,43 @@ func TestGet(t *testing.T) {
 						},
 					},
 					Insecure: true,
-					Platform: "*/amd64",
+					Platform: types.Platform{
+						Platform: &v1.Platform{
+							OS:           "",
+							Architecture: "amd64",
+						},
+					},
 				},
 			},
+		},
+		{
+			name: "force platform",
+			args: args{
+				imageName: fmt.Sprintf("%s/library/alpine:3.10", serverAddr),
+				option: types.RegistryOptions{
+					Credentials: []types.Credential{
+						{
+							Username: "test",
+							Password: "testpass",
+						},
+					},
+					Insecure: true,
+					Platform: types.Platform{
+						Force: true,
+						Platform: &v1.Platform{
+							OS:           "windows",
+							Architecture: "amd64",
+						},
+					},
+				},
+			},
+			wantErr: "the specified platform not found",
 		},
 		{
 			name: "bad credential",
 			args: args{
 				imageName: fmt.Sprintf("%s/library/alpine:3.10", serverAddr),
-				option: types.RemoteOptions{
+				option: types.RegistryOptions{
 					Credentials: []types.Credential{
 						{
 							Username: "foo",
@@ -147,11 +258,33 @@ func TestGet(t *testing.T) {
 			wantErr: "invalid username/password",
 		},
 		{
+			name: "bad credential for multiple mirrors",
+			args: args{
+				imageName: fmt.Sprintf("%s/library/alpine:3.10", serverAddr),
+				option: types.RegistryOptions{
+					Credentials: []types.Credential{
+						{
+							Username: "foo",
+							Password: "bar",
+						},
+					},
+					Insecure: true,
+					RegistryMirrors: map[string][]string{
+						serverAddr: {
+							serverAddr,
+							serverAddr,
+						},
+					},
+				},
+			},
+			wantErr: "6 errors occurred:", // 2 errors for each repository (for 2 mirrors and the original repository)
+		},
+		{
 			name: "bad keychain",
 			args: args{
 				imageName: fmt.Sprintf("%s/library/alpine:3.10", serverAddr),
-				config:    fmt.Sprintf(`{"auths": {"%s": {"auth": %q}}}`, serverAddr, encode("foo", "bar")),
-				option: types.RemoteOptions{
+				config:    fmt.Sprintf(`{"auths": {%q: {"auth": %q}}}`, serverAddr, encode("foo", "bar")),
+				option: types.RegistryOptions{
 					Insecure: true,
 				},
 			},
@@ -172,7 +305,76 @@ func TestGet(t *testing.T) {
 				assert.ErrorContains(t, err, tt.wantErr, err)
 				return
 			}
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		})
 	}
+}
+
+type userAgentsTrackingHandler struct {
+	hr http.Handler
+
+	mu     sync.Mutex
+	agents set.Set[string]
+}
+
+func newUserAgentsTrackingHandler(hr http.Handler) *userAgentsTrackingHandler {
+	return &userAgentsTrackingHandler{
+		hr:     hr,
+		agents: set.New[string](),
+	}
+}
+
+func (uh *userAgentsTrackingHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
+	for _, agent := range r.Header["User-Agent"] {
+		// Skip test framework user agent
+		if agent != "Go-http-client/1.1" {
+			uh.agents.Append(agent)
+		}
+	}
+	uh.hr.ServeHTTP(rw, r)
+}
+
+func setupAgentTrackingRegistry(t *testing.T) (*httptest.Server, *userAgentsTrackingHandler) {
+	images := map[string]v1.Image{
+		"v2/library/alpine:3.10": localImage(t),
+	}
+	tr := registry.NewDockerRegistry(registry.Option{
+		Images: images,
+	})
+
+	tracker := newUserAgentsTrackingHandler(tr.Config.Handler)
+	tr.Config.Handler = tracker
+
+	return tr, tracker
+}
+
+func TestUserAgents(t *testing.T) {
+	tr, tracker := setupAgentTrackingRegistry(t)
+	defer tr.Close()
+
+	serverAddr := tr.Listener.Addr().String()
+
+	n, err := name.ParseReference(fmt.Sprintf("%s/library/alpine:3.10", serverAddr))
+	require.NoError(t, err)
+
+	_, err = Get(context.Background(), n, types.RegistryOptions{
+		Credentials: []types.Credential{
+			{
+				Username: "test",
+				Password: "testpass",
+			},
+		},
+		Insecure: true,
+	})
+	require.NoError(t, err)
+
+	require.Len(t, tracker.agents, 1)
+	ok := tracker.agents.Contains(fmt.Sprintf("trivy/%s go-containerregistry", app.Version()))
+	require.True(t, ok, `user-agent header equals to "trivy/dev go-containerregistry"`)
+}
+
+func localImage(t *testing.T) v1.Image {
+	img, err := tarfile.ImageFromPath("../fanal/test/testdata/alpine-310.tar.gz")
+	require.NoError(t, err)
+	return img
 }

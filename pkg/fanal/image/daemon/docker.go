@@ -11,10 +11,19 @@ import (
 
 // DockerImage implements v1.Image by extending daemon.Image.
 // The caller must call cleanup() to remove a temporary file.
-func DockerImage(ref name.Reference) (Image, func(), error) {
+func DockerImage(ref name.Reference, host string) (Image, func(), error) {
 	cleanup := func() {}
 
-	c, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	opts := []client.Opt{
+		client.FromEnv,
+		client.WithAPIVersionNegotiation(),
+	}
+	if host != "" {
+		// adding host parameter to the last assuming it will pick up more preference
+		opts = append(opts, client.WithHost(host))
+	}
+	c, err := client.NewClientWithOpts(opts...)
+
 	if err != nil {
 		return nil, cleanup, xerrors.Errorf("failed to initialize a docker client: %w", err)
 	}
@@ -44,7 +53,7 @@ func DockerImage(ref name.Reference) (Image, func(), error) {
 
 	f, err := os.CreateTemp("", "fanal-*")
 	if err != nil {
-		return nil, cleanup, xerrors.Errorf("failed to create a temporary file")
+		return nil, cleanup, xerrors.Errorf("failed to create a temporary file: %w", err)
 	}
 
 	cleanup = func() {

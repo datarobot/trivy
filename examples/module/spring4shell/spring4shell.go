@@ -5,6 +5,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,7 +16,6 @@ import (
 	"github.com/aquasecurity/trivy/pkg/module/api"
 	"github.com/aquasecurity/trivy/pkg/module/serialize"
 	"github.com/aquasecurity/trivy/pkg/module/wasm"
-	"github.com/aquasecurity/trivy/pkg/types"
 )
 
 const (
@@ -113,7 +113,7 @@ func (Spring4Shell) parseTomcatReleaseNotes(f *os.File, filePath string) (*seria
 
 	m := tomcatVersionRegex.FindStringSubmatch(string(b))
 	if len(m) != 2 {
-		return nil, fmt.Errorf("unknown tomcat release notes format")
+		return nil, errors.New("unknown tomcat release notes format")
 	}
 
 	return &serialize.AnalysisResult{
@@ -226,7 +226,7 @@ func (Spring4Shell) PostScan(results serialize.Results) (serialize.Results, erro
 	var javaMajorVersion int
 	var tomcatVersion string
 	for _, result := range results {
-		if result.Class != types.ClassCustom {
+		if result.Class != "custom" {
 			continue
 		}
 

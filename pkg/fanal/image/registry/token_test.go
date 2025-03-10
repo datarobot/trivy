@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/google/go-containerregistry/pkg/authn"
-
 	"github.com/stretchr/testify/assert"
 
 	"github.com/aquasecurity/trivy/pkg/fanal/types"
@@ -14,7 +13,7 @@ import (
 func TestGetToken(t *testing.T) {
 	type args struct {
 		domain string
-		opt    types.RemoteOptions
+		opt    types.RegistryOptions
 	}
 	tests := []struct {
 		name     string

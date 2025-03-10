@@ -6,11 +6,9 @@ package wasm
 // TinyGo can build this package, but Go cannot.
 
 import (
+	"encoding/json"
 	"fmt"
-	"reflect"
 	"unsafe"
-
-	"github.com/mailru/easyjson"
 
 	"github.com/aquasecurity/trivy/pkg/module/api"
 	"github.com/aquasecurity/trivy/pkg/module/serialize"
@@ -40,20 +38,16 @@ func Error(message string) {
 	_error(ptr, size)
 }
 
-//go:wasm-module env
-//export debug
+//go:wasmimport env debug
 func _debug(ptr uint32, size uint32)
 
-//go:wasm-module env
-//export info
+//go:wasmimport env info
 func _info(ptr uint32, size uint32)
 
-//go:wasm-module env
-//export warn
+//go:wasmimport env warn
 func _warn(ptr uint32, size uint32)
 
-//go:wasm-module env
-//export error
+//go:wasmimport env error
 func _error(ptr uint32, size uint32)
 
 var module api.Module
@@ -134,8 +128,8 @@ func _post_scan(ptr, size uint32) uint64 {
 	return marshal(results)
 }
 
-func marshal(v easyjson.Marshaler) uint64 {
-	b, err := easyjson.Marshal(v)
+func marshal(v any) uint64 {
+	b, err := json.Marshal(v)
 	if err != nil {
 		Error(fmt.Sprintf("marshal error: %s", err))
 		return 0
@@ -145,29 +139,18 @@ func marshal(v easyjson.Marshaler) uint64 {
 	return (uint64(p) << uint64(32)) | uint64(len(b))
 }
 
-func unmarshal(ptr, size uint32, v easyjson.Unmarshaler) error {
-	var b []byte
-	s := (*reflect.SliceHeader)(unsafe.Pointer(&b))
-	s.Len = uintptr(size)
-	s.Cap = uintptr(size)
-	s.Data = uintptr(ptr)
-
-	if err := easyjson.Unmarshal(b, v); err != nil {
+func unmarshal(ptr, size uint32, v any) error {
+	s := ptrToString(ptr, size)
+	if err := json.Unmarshal([]byte(s), v); err != nil {
 		return fmt.Errorf("unmarshal error: %s", err)
 	}
-
 	return nil
 }
 
 // ptrToString returns a string from WebAssembly compatible numeric types representing its pointer and length.
 func ptrToString(ptr uint32, size uint32) string {
-	// Get a slice view of the underlying bytes in the stream. We use SliceHeader, not StringHeader
-	// as it allows us to fix the capacity to what was allocated.
-	return *(*string)(unsafe.Pointer(&reflect.SliceHeader{
-		Data: uintptr(ptr),
-		Len:  uintptr(size), // Tinygo requires these as uintptrs even if they are int fields.
-		Cap:  uintptr(size), // ^^ See https://github.com/tinygo-org/tinygo/issues/1284
-	}))
+	b := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(ptr))), size)
+	return *(*string)(unsafe.Pointer(&b))
 }
 
 // stringToPtr returns a pointer and size pair for the given string in a way compatible with WebAssembly numeric types.

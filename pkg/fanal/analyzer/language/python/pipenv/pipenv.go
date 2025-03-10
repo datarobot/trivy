@@ -4,14 +4,14 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"golang.org/x/xerrors"
 
-	"github.com/aquasecurity/go-dep-parser/pkg/python/pipenv"
+	"github.com/aquasecurity/trivy/pkg/dependency/parser/python/pipenv"
 	"github.com/aquasecurity/trivy/pkg/fanal/analyzer"
 	"github.com/aquasecurity/trivy/pkg/fanal/analyzer/language"
 	"github.com/aquasecurity/trivy/pkg/fanal/types"
-	"github.com/aquasecurity/trivy/pkg/fanal/utils"
 )
 
 func init() {
@@ -34,7 +34,7 @@ func (a pipenvLibraryAnalyzer) Analyze(_ context.Context, input analyzer.Analysi
 
 func (a pipenvLibraryAnalyzer) Required(filePath string, _ os.FileInfo) bool {
 	fileName := filepath.Base(filePath)
-	return utils.StringInSlice(fileName, requiredFiles)
+	return slices.Contains(requiredFiles, fileName)
 }
 
 func (a pipenvLibraryAnalyzer) Type() analyzer.Type {

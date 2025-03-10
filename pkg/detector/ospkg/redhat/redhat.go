@@ -1,22 +1,20 @@
 package redhat
 
 import (
+	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	version "github.com/knqyf263/go-rpm-version"
-	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
 	"golang.org/x/xerrors"
-	"k8s.io/utils/clock"
 
 	dbTypes "github.com/aquasecurity/trivy-db/pkg/types"
-	ustrings "github.com/aquasecurity/trivy-db/pkg/utils/strings"
 	redhat "github.com/aquasecurity/trivy-db/pkg/vulnsrc/redhat-oval"
 	"github.com/aquasecurity/trivy-db/pkg/vulnsrc/vulnerability"
-	"github.com/aquasecurity/trivy/pkg/fanal/analyzer/os"
+	osver "github.com/aquasecurity/trivy/pkg/detector/ospkg/version"
 	ftypes "github.com/aquasecurity/trivy/pkg/fanal/types"
 	"github.com/aquasecurity/trivy/pkg/log"
 	"github.com/aquasecurity/trivy/pkg/scanner/utils"
@@ -64,52 +62,28 @@ var (
 	}
 )
 
-type options struct {
-	clock clock.Clock
-}
-
-type option func(*options)
-
-func WithClock(clock clock.Clock) option {
-	return func(opts *options) {
-		opts.clock = clock
-	}
-}
-
 // Scanner implements the RedHat scanner
 type Scanner struct {
 	vs redhat.VulnSrc
-	*options
 }
 
 // NewScanner is the factory method for Scanner
-func NewScanner(opts ...option) *Scanner {
-	o := &options{
-		clock: clock.RealClock{},
-	}
-
-	for _, opt := range opts {
-		opt(o)
-	}
+func NewScanner() *Scanner {
 	return &Scanner{
-		vs:      redhat.NewVulnSrc(),
-		options: o,
+		vs: redhat.NewVulnSrc(),
 	}
 }
 
 // Detect scans and returns redhat vulnerabilities
-func (s *Scanner) Detect(osVer string, _ *ftypes.Repository, pkgs []ftypes.Package) ([]types.DetectedVulnerability, error) {
-	log.Logger.Info("Detecting RHEL/CentOS vulnerabilities...")
-	if strings.Count(osVer, ".") > 0 {
-		osVer = osVer[:strings.Index(osVer, ".")]
-	}
-	log.Logger.Debugf("Red Hat: os version: %s", osVer)
-	log.Logger.Debugf("Red Hat: the number of packages: %d", len(pkgs))
+func (s *Scanner) Detect(ctx context.Context, osVer string, _ *ftypes.Repository, pkgs []ftypes.Package) ([]types.DetectedVulnerability, error) {
+	osVer = osver.Major(osVer)
+	log.InfoContext(ctx, "Detecting RHEL/CentOS vulnerabilities...", log.String("os_version", osVer),
+		log.Int("pkg_num", len(pkgs)))
 
 	var vulns []types.DetectedVulnerability
 	for _, pkg := range pkgs {
 		if !isFromSupportedVendor(pkg) {
-			log.Logger.Debugf("Skipping %s: unsupported vendor", pkg.Name)
+			log.DebugContext(ctx, "Skipping the package with unsupported vendor", log.String("package", pkg.Name))
 			continue
 		}
 
@@ -140,25 +114,37 @@ func (s *Scanner) detect(osVer string, pkg ftypes.Package) ([]types.DetectedVuln
 		return nil, xerrors.Errorf("failed to get Red Hat advisories: %w", err)
 	}
 
-	installed := utils.FormatVersion(pkg)
-	installedVersion := version.NewVersion(installed)
-
-	uniqVulns := map[string]types.DetectedVulnerability{}
+	// Choose the latest fixed version for each CVE-ID (empty for unpatched vulns).
+	// Take the single RHSA-ID with the latest fixed version (for patched vulns).
+	uniqAdvisories := make(map[string]dbTypes.Advisory)
 	for _, adv := range advisories {
-		// if Arches for advisory is empty or pkg.Arch is "noarch", then any Arches are affected
+		// If Arches for advisory are empty or pkg.Arch is "noarch", then any Arches are affected
 		if len(adv.Arches) != 0 && pkg.Arch != "noarch" {
 			if !slices.Contains(adv.Arches, pkg.Arch) {
 				continue
 			}
 		}
 
-		vulnID := adv.VulnerabilityID
+		if a, ok := uniqAdvisories[adv.VulnerabilityID]; ok {
+			if version.NewVersion(a.FixedVersion).LessThan(version.NewVersion(adv.FixedVersion)) {
+				uniqAdvisories[adv.VulnerabilityID] = adv
+			}
+		} else {
+			uniqAdvisories[adv.VulnerabilityID] = adv
+		}
+	}
+
+	var vulns []types.DetectedVulnerability
+	for _, adv := range uniqAdvisories {
 		vuln := types.DetectedVulnerability{
-			VulnerabilityID:  vulnID,
+			VulnerabilityID:  adv.VulnerabilityID,
+			VendorIDs:        adv.VendorIDs, // Will be empty for unpatched vulnerabilities
 			PkgID:            pkg.ID,
 			PkgName:          pkg.Name,
 			InstalledVersion: utils.FormatVersion(pkg),
-			Ref:              pkg.Ref,
+			FixedVersion:     version.NewVersion(adv.FixedVersion).String(), // Will be empty for unpatched vulnerabilities
+			PkgIdentifier:    pkg.Identifier,
+			Status:           adv.Status,
 			Layer:            pkg.Layer,
 			SeveritySource:   vulnerability.RedHat,
 			Vulnerability: dbTypes.Vulnerability{
@@ -167,65 +153,26 @@ func (s *Scanner) detect(osVer string, pkg ftypes.Package) ([]types.DetectedVuln
 			Custom: adv.Custom,
 		}
 
-		// unpatched vulnerabilities
-		if adv.FixedVersion == "" {
-			// Red Hat may contain several advisories for the same vulnerability (RHSA advisories).
-			// To avoid overwriting the fixed version by mistake, we should skip unpatched vulnerabilities if they were added earlier
-			if _, ok := uniqVulns[vulnID]; !ok {
-				uniqVulns[vulnID] = vuln
-			}
-			continue
-		}
-
-		// patched vulnerabilities
-		fixedVersion := version.NewVersion(adv.FixedVersion)
-		if installedVersion.LessThan(fixedVersion) {
-			vuln.VendorIDs = adv.VendorIDs
-			vuln.FixedVersion = fixedVersion.String()
-
-			if v, ok := uniqVulns[vulnID]; ok {
-				// In case two advisories resolve the same CVE-ID.
-				// e.g. The first fix might be incomplete.
-				v.VendorIDs = ustrings.Unique(append(v.VendorIDs, vuln.VendorIDs...))
-
-				// The newer fixed version should be taken.
-				if version.NewVersion(v.FixedVersion).LessThan(fixedVersion) {
-					v.FixedVersion = vuln.FixedVersion
-				}
-				uniqVulns[vulnID] = v
-			} else {
-				uniqVulns[vulnID] = vuln
-			}
+		// Keep unpatched and affected vulnerabilities
+		if adv.FixedVersion == "" || version.NewVersion(vuln.InstalledVersion).LessThan(version.NewVersion(adv.FixedVersion)) {
+			vulns = append(vulns, vuln)
 		}
 	}
 
-	vulns := maps.Values(uniqVulns)
 	sort.Slice(vulns, func(i, j int) bool {
 		return vulns[i].VulnerabilityID < vulns[j].VulnerabilityID
 	})
-
 	return vulns, nil
 }
 
 // IsSupportedVersion checks is OSFamily can be scanned with Redhat scanner
-func (s *Scanner) IsSupportedVersion(osFamily, osVer string) bool {
-	if strings.Count(osVer, ".") > 0 {
-		osVer = osVer[:strings.Index(osVer, ".")]
+func (s *Scanner) IsSupportedVersion(ctx context.Context, osFamily ftypes.OSType, osVer string) bool {
+	osVer = osver.Major(osVer)
+	if osFamily == ftypes.CentOS {
+		return osver.Supported(ctx, centosEOLDates, osFamily, osVer)
 	}
 
-	var eolDate time.Time
-	var ok bool
-	if osFamily == os.RedHat {
-		eolDate, ok = redhatEOLDates[osVer]
-	} else if osFamily == os.CentOS {
-		eolDate, ok = centosEOLDates[osVer]
-	}
-	if !ok {
-		log.Logger.Warnf("This OS version is not on the EOL list: %s %s", osFamily, osVer)
-		return false
-	}
-
-	return s.clock.Now().Before(eolDate)
+	return osver.Supported(ctx, redhatEOLDates, osFamily, osVer)
 }
 
 func isFromSupportedVendor(pkg ftypes.Package) bool {

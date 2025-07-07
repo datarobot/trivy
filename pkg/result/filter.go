@@ -11,6 +11,7 @@ import (
 
 	"github.com/open-policy-agent/opa/v1/ast"
 	"github.com/open-policy-agent/opa/v1/rego"
+	"github.com/open-policy-agent/opa/v1/bundle"
 	"github.com/samber/lo"
 	"golang.org/x/xerrors"
 

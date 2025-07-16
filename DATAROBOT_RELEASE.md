@@ -8,6 +8,13 @@ What you need to release?
 
 Logged into Docker Hub with a user that has permission to write images to datarobotdev/trivy
 
+Preconditions:
+Add the original repository as a remote and fetch the latest changes from it:
+```
+git remote add aquasecurity https://github.com/aquasecurity/trivy.git
+git fetch aquasecurity
+```
+
 Make a tag that represents the version we are "forking".
 
 I typically pick the latest release from the upstream, for example v0.48.3
@@ -15,13 +22,13 @@ I typically pick the latest release from the upstream, for example v0.48.3
 I would do
 
 ```
-git checkout v0.48.3
-git checkout -b u/v0.48.3
+git checkout v0.64.1
+git checkout -b u/v0.64.1
 git checkout main_datarobot
-git rebase u/v0.48.3
+git rebase u/v0.64.1
 git push -f
-git tag v0.48.3-dr1
-git push origin v0.48.3-dr1
+git tag v0.64.1-dr1
+git push origin v0.64.1-dr1
 ```
 then I'm ready to run the releaser that will build and push everything
 

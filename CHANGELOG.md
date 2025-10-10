@@ -5,7 +5,6 @@
 
 ### Bug Fixes
 
-<<<<<<< HEAD
 * **deps:** bump alpine from `3.22.1` to `3.23.0` [backport: release/v0.68] ([#9949](https://github.com/aquasecurity/trivy/issues/9949)) ([db28945](https://github.com/aquasecurity/trivy/commit/db2894561daa20301eb144cad467d75d8a3d2647))
 
 ## [0.68.1](https://github.com/aquasecurity/trivy/compare/v0.68.0...v0.68.1) (2025-12-03)

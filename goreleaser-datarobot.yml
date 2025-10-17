@@ -38,56 +38,14 @@ builds:
     goarm:
       - 7
 
-dockers:
-  - image_templates:
-      - "docker.io/datarobotdev/trivy:{{ .Version }}-amd64"
-      - "docker.io/datarobotdev/trivy:latest-amd64"
-    use: buildx
-    goos: linux
-    goarch: amd64
-    ids:
-      - build-linux
-    build_flag_templates:
-      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
-      - "--label=org.opencontainers.image.description=A Fast Vulnerability Scanner for Containers"
-      - "--label=org.opencontainers.image.vendor=Aqua Security"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.created={{ .Date }}"
-      - "--label=org.opencontainers.image.source=https://github.com/aquasecurity/trivy"
-      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
-      - "--label=org.opencontainers.image.url=https://www.aquasec.com/products/trivy/"
-      - "--label=org.opencontainers.image.documentation=https://trivy.dev/v{{ .Version }}/"
-      - "--platform=linux/amd64"
+dockers_v2:
+  - images:
+      - "docker.io/datarobotdev/trivy"
+    tags:
+      - "{{ .Version }}"
+      - "latest"
+    platforms:
+      - "linux/amd64"
+      - "linux/arm64"
     extra_files:
-    - contrib/
-  - image_templates:
-      - "docker.io/datarobotdev/trivy:{{ .Version }}-arm64"
-      - "docker.io/datarobotdev/trivy:latest-arm64"
-    use: buildx
-    goos: linux
-    goarch: arm64
-    ids:
-      - build-linux
-    build_flag_templates:
-      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
-      - "--label=org.opencontainers.image.description=A Fast Vulnerability Scanner for Containers"
-      - "--label=org.opencontainers.image.vendor=Aqua Security"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.created={{ .Date }}"
-      - "--label=org.opencontainers.image.source=https://github.com/aquasecurity/trivy"
-      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
-      - "--label=org.opencontainers.image.url=https://www.aquasec.com/products/trivy/"
-      - "--label=org.opencontainers.image.documentation=https://trivy.dev/v{{ .Version }}/"
-      - "--platform=linux/arm64"
-    extra_files:
-    - contrib/
-
-docker_manifests:
-  - name_template: 'datarobotdev/trivy:{{ .Version }}'
-    image_templates:
-    - 'datarobotdev/trivy:{{ .Version }}-amd64'
-    - 'datarobotdev/trivy:{{ .Version }}-arm64'
-  - name_template: 'datarobotdev/trivy:latest'
-    image_templates:
-    - 'datarobotdev/trivy:{{ .Version }}-amd64'
-    - 'datarobotdev/trivy:{{ .Version }}-arm64'
+      - contrib/

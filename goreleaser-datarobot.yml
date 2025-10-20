@@ -47,5 +47,15 @@ dockers_v2:
     platforms:
       - "linux/amd64"
       - "linux/arm64"
+    labels:
+      "org.opencontainers.image.title": "{{ .ProjectName }}"
+      "org.opencontainers.image.description": "A Fast Vulnerability Scanner for Containers"
+      "org.opencontainers.image.vendor": "DataRobot"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.created": "{{ .Date }}"
+      "org.opencontainers.image.source": "https://github.com/datarobot/trivy"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.url": "https://github.com/datarobot/trivy"
     extra_files:
       - contrib/
+      

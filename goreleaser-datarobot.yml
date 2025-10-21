@@ -47,6 +47,8 @@ dockers_v2:
     platforms:
       - "linux/amd64"
       - "linux/arm64"
+    ids:
+      - build-linux
     labels:
       "org.opencontainers.image.title": "{{ .ProjectName }}"
       "org.opencontainers.image.description": "A Fast Vulnerability Scanner for Containers"

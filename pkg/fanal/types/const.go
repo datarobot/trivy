@@ -96,6 +96,7 @@ const (
 	Hex            LangType = "hex"
 	Bitnami        LangType = "bitnami"
 	Julia          LangType = "julia"
+	Quantum        LangType = "quantum"
 
 	K8sUpstream LangType = "kubernetes"
 	EKS         LangType = "eks" // Amazon Elastic Kubernetes Service

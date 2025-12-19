@@ -1,0 +1,14 @@
+{
+  "name": "quantum-native-openssl",
+  "library_name": "openssl",
+  "version": "1.1.1",
+  "fullversion": "1.1.1.post3+dr",
+  "suffix": ".post3+dr",
+  "library_type": "native",
+  "license": "OpenSSL",
+  "upstream": "https://www.openssl.org/source/openssl-1.1.1.tar.gz",
+  "platform": "linux-x86_64",
+  "python": "any",
+  "dependencies": [],
+  "changelog": []
+}

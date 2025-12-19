@@ -84,6 +84,7 @@ const (
 	TypePipenv       Type = "pipenv"
 	TypePoetry       Type = "poetry"
 	TypeUv           Type = "uv"
+	TypeQuantumPkg   Type = "quantum-pkg"
 
 	// Go
 	TypeGoBinary Type = "gobinary"
@@ -204,6 +205,7 @@ var (
 		TypePipenv,
 		TypePoetry,
 		TypeUv,
+		TypeQuantumPkg,
 		TypeGoBinary,
 		TypeGoMod,
 		TypeRustBinary,
@@ -246,6 +248,7 @@ var (
 		TypeNodePkg,
 		TypeCondaPkg,
 		TypePythonPkg,
+		TypeQuantumPkg,
 		TypeGoBinary,
 		TypeJar,
 		TypeRustBinary,

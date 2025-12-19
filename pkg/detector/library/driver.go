@@ -62,6 +62,11 @@ func NewDriver(libType ftypes.LangType) (Driver, bool) {
 		// Only semver can be used for version ranges
 		// https://docs.conan.io/en/latest/versioning/version_ranges.html
 		comparer = compare.GenericComparer{}
+	case ftypes.Quantum:
+		// Quantum packages are native C/C++ libraries packaged as Python wheels
+		// Use Conan ecosystem for vulnerability detection as it covers C/C++ packages
+		ecosystem = vulnerability.Conan
+		comparer = compare.GenericComparer{}
 	case ftypes.Swift:
 		// Swift uses semver
 		// https://www.swift.org/package-manager/#importing-dependencies

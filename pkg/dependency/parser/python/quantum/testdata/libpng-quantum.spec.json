@@ -1,0 +1,14 @@
+{
+  "name": "quantum-native-libpng",
+  "library_name": "libpng",
+  "version": "1.6.37",
+  "fullversion": "1.6.37.post1+dr",
+  "suffix": ".post1+dr",
+  "library_type": "native",
+  "license": "libpng",
+  "upstream": "https://downloads.sourceforge.net/libpng/libpng-1.6.37.tar.xz",
+  "platform": "linux-x86_64",
+  "python": "any",
+  "dependencies": [],
+  "changelog": []
+}

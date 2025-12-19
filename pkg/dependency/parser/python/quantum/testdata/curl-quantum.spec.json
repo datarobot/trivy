@@ -1,0 +1,14 @@
+{
+  "name": "quantum-native-curl",
+  "library_name": "curl",
+  "version": "7.88.1",
+  "fullversion": "7.88.1.post5+dr",
+  "suffix": ".post5+dr",
+  "library_type": "native",
+  "license": "MIT",
+  "upstream": "https://curl.se/download/curl-7.88.1.tar.gz",
+  "platform": "linux-x86_64",
+  "python": "any",
+  "dependencies": ["quantum-native-openssl==1.1.1.post3+dr"],
+  "changelog": []
+}

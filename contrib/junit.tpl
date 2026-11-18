@@ -2,6 +2,9 @@
 <testsuites name="trivy">
 {{- range . -}}
 {{- $failures := len .Vulnerabilities }}
+{{- $vulnTarget := .Target }}
+{{- $vulnClass := .Class }}
+{{- $vulnType := .Type }}
     <testsuite tests="{{ $failures }}" failures="{{ $failures }}" name="{{ .Target }}" errors="0" skipped="0" time="">
     {{- if not (eq .Type "") }}
         <properties>
@@ -12,7 +15,11 @@
         <testcase classname="{{ .PkgName | replace "/" "." }}-{{ .InstalledVersion }}" file="{{ .PkgName }}" name="[{{ .Vulnerability.Severity }}] {{ .VulnerabilityID }}" time="">
           <failure message="{{ escapeXML .Title }}" type="description">
             Severity: {{ .Severity }}
-            Package Path (if available): {{ .PkgPath }}
+            Package: {{ escapeXML .PkgName }} {{ escapeXML .InstalledVersion }}
+            Fixed Version: {{ if .FixedVersion }}{{ escapeXML .FixedVersion }}{{ else }}none{{ end }}
+            Target: {{ escapeXML $vulnTarget }}
+            Type: {{ $vulnClass }}/{{ $vulnType }}
+            Package Path (if available): {{ if .PkgPath }}{{ escapeXML .PkgPath }}{{ else if eq (print $vulnClass) "os-pkgs" }}OS package ({{ $vulnType }} package database){{ else }}n/a{{ end }}
             Description: {{ escapeXML .Description }}
           </failure>
         </testcase>
